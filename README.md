@@ -46,7 +46,7 @@ npm run package:appimage  # Linux AppImage (also creates the SEA executable)
 npm test
 ```
 
-SEA outputs go in `dist/` (for example, `dist/phonehaul-linux-x64`). `package:sea` packages only for the current host; build each release target on its matching OS and CPU. The Linux AppImage command also requires `appimagetool` on `PATH` or an `APPIMAGETOOL` path. If it cannot download its runtime automatically, download the matching `runtime-x86_64` or `runtime-aarch64` from [AppImage type2-runtime releases](https://github.com/AppImage/type2-runtime/releases) and set `APPIMAGE_RUNTIME` to that file. CI builds Linux x64/arm64 AppImages and SEA executables, plus SEA executables for Windows x64/arm64 and macOS x64/arm64. macOS x64 SEA support is experimental in Node.js and is not covered by Node's SEA test matrix.
+SEA outputs go in `dist/` (for example, `dist/phonehaul-linux-x64`). `package:sea` packages only for the current host; build each release target on its matching OS and CPU. The Linux AppImage command also requires `appimagetool` on `PATH` or an `APPIMAGETOOL` path. If it cannot download its runtime automatically, download the matching `runtime-x86_64` or `runtime-aarch64` from [AppImage type2-runtime releases](https://github.com/AppImage/type2-runtime/releases) and set `APPIMAGE_RUNTIME` to that file. CI builds Linux x64/arm64 AppImages and SEA executables, Windows x64/arm64 and macOS x64/arm64 SEA executables, and an Android debug APK with unit tests. macOS x64 SEA support is experimental in Node.js, so that matrix leg is best-effort.
 
 To build the Windows `.exe` locally, use a Windows machine (the SEA package embeds that machine's Node executable). Install Node.js 24 LTS and Git; no .NET or Android SDK is needed for the desktop receiver. In PowerShell, from the repository root, run:
 
@@ -58,6 +58,19 @@ npm --prefix receiver run package:sea
 The standalone file is `dist\phonehaul-windows-x64.exe` on Windows x64, or `dist\phonehaul-windows-arm64.exe` on Windows ARM64. It includes its Node runtime, so end users do not need Node installed. The existing GitHub Actions workflow also builds these Windows executables and uploads them as workflow artifacts; they are executable packages, not a Setup installer.
 
 The source workflow remains available with `npm run dev`. To smoke-test a generated SEA executable, run `npm run smoke:sea` after packaging it.
+
+### Build with helper scripts
+
+From the repository root on Linux, the scripts under `scripts/` select the Node version from `.nvmrc` with nvm (installing it if needed), install the receiver's locked npm dependencies, and run the selected build:
+
+```sh
+./scripts/build-receiver.sh  # Node bundle for inspection
+./scripts/build-android.sh   # Debug APK and Android unit tests
+./scripts/build-appimage.sh  # Linux AppImage and embedded SEA executable
+./scripts/build-all.sh       # Bundle, Android APK/tests, then AppImage
+```
+
+Android builds need a JDK 17 and Android SDK 36. The Gradle wrapper reads `android/local.properties`, `ANDROID_HOME`, or `ANDROID_SDK_ROOT`. AppImage builds need `appimagetool` and the matching type 2 runtime; the script automatically uses `~/opt/appimagetool` and `~/opt/runtime-x86_64` (or `runtime-aarch64`) when present. Override those locations with `APPIMAGETOOL` and `APPIMAGE_RUNTIME` if needed.
 
 For development, obtain the QR URI from the rendered QR and run:
 
