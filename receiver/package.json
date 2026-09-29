@@ -1,0 +1,26 @@
+{
+  "name": "phonehaul-receiver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "phonehaul": "./src/server/main.js" },
+  "scripts": {
+    "dev": "node src/server/main.js",
+    "start": "node src/server/main.js",
+    "build": "node scripts/build-receiver.js",
+    "build:receiver": "node scripts/build-receiver.js",
+    "package:sea": "node scripts/package-sea.js",
+    "package:appimage": "node scripts/package-appimage.js",
+    "dist": "npm run package:sea",
+    "smoke:sea": "node scripts/smoke-sea.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "selfsigned": "^3.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.5",
+    "postject": "1.0.0-alpha.6"
+  }
+}

@@ -1,0 +1,76 @@
+name: Receiver builds
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sea:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: windows-2025
+            platform: windows
+            arch: x64
+          - runner: windows-11-arm
+            platform: windows
+            arch: arm64
+          - runner: macos-15-intel
+            platform: macos
+            arch: x64
+          - runner: macos-15
+            platform: macos
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.platform == 'macos' && matrix.arch == 'x64' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install receiver dependencies
+        run: npm install --prefix receiver
+      - name: Run receiver tests
+        run: npm --prefix receiver test
+      - name: Build standalone executable
+        if: matrix.platform != 'linux'
+        run: npm --prefix receiver run package:sea
+      - name: Install AppImage tooling
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          case "${{ matrix.arch }}" in
+            x64) APPIMAGE_ARCH=x86_64 ;;
+            arm64) APPIMAGE_ARCH=aarch64 ;;
+          esac
+          curl --fail --location "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage" --output "$RUNNER_TEMP/appimagetool"
+          curl --fail --location "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${APPIMAGE_ARCH}" --output "$RUNNER_TEMP/appimage-runtime"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimage-runtime"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+          echo "APPIMAGE_RUNTIME=$RUNNER_TEMP/appimage-runtime" >> "$GITHUB_ENV"
+      - name: Build AppImage and standalone executable
+        if: matrix.platform == 'linux'
+        run: npm --prefix receiver run package:appimage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+      - name: Smoke test standalone executable
+        run: npm --prefix receiver run smoke:sea
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phonehaul-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/phonehaul-${{ matrix.platform }}-${{ matrix.arch }}*
+            dist/PhoneHaul-*.AppImage
+          if-no-files-found: error

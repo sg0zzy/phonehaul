@@ -1,0 +1,9 @@
+node_modules/
+/dist/
+receiver/.build/
+*.phonehaul-partial
+.DS_Store
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/

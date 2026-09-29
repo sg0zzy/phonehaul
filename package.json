@@ -1,0 +1,14 @@
+{
+  "name": "phonehaul",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix receiver run dev",
+    "test": "npm --prefix receiver test",
+    "build": "npm --prefix receiver run build",
+    "build:receiver": "npm --prefix receiver run build:receiver",
+    "package:sea": "npm --prefix receiver run package:sea",
+    "package:appimage": "npm --prefix receiver run package:appimage",
+    "dist": "npm run package:sea",
+    "smoke:sea": "npm --prefix receiver run smoke:sea"
+  }
+}
