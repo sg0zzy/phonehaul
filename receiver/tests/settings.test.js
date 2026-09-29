@@ -14,8 +14,8 @@ test('settings use XDG_CONFIG_HOME on Linux and home fallback', () => {
 test('settings use platform user config locations', () => {
   assert.equal(settingsDirectory({ platform: 'win32', env: { APPDATA: 'C:\\Users\\test\\AppData\\Roaming' }, home: 'C:\\Users\\test' }), path.win32.join('C:\\Users\\test\\AppData\\Roaming', 'PhoneHaul'));
   assert.equal(settingsDirectory({ platform: 'win32', env: {}, home: 'C:\\Users\\test' }), path.win32.join('C:\\Users\\test', 'AppData', 'Roaming', 'PhoneHaul'));
-  assert.equal(settingsDirectory({ platform: 'darwin', env: {}, home: '/Users/test' }), path.join('/Users/test', 'Library', 'Application Support', 'PhoneHaul'));
-  assert.equal(settingsFilePath({ platform: 'darwin', env: {}, home: '/Users/test' }), path.join('/Users/test', 'Library', 'Application Support', 'PhoneHaul', 'settings.json'));
+  assert.equal(settingsDirectory({ platform: 'darwin', env: {}, home: '/Users/test' }), path.posix.join('/Users/test', 'Library', 'Application Support', 'PhoneHaul'));
+  assert.equal(settingsFilePath({ platform: 'darwin', env: {}, home: '/Users/test' }), path.posix.join('/Users/test', 'Library', 'Application Support', 'PhoneHaul', 'settings.json'));
 });
 
 test('Linux default destination follows XDG configured Downloads directory', async () => {

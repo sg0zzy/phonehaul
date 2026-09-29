@@ -93,7 +93,8 @@ export class TransferReceiver {
       if (bytes !== item.size) throw new Error('Size mismatch');
       const digest = hash.digest('hex');
       if (digest !== sha256.toLowerCase()) throw new Error('SHA-256 mismatch');
-      const file = await open(partial, 'r');
+      // Windows requires a writable handle for FlushFileBuffers/fsync.
+      const file = await open(partial, 'r+');
       try { await file.sync(); } finally { await file.close(); }
       if (choice.replace) await rename(partial, choice.target);
       else { await link(partial, choice.target); await unlink(partial); }

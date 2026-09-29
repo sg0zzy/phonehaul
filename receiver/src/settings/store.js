@@ -38,7 +38,7 @@ export async function defaultDownloadsDirectory({ platform = process.platform, h
     } catch { /* use the standard user Downloads path */ }
     return path.win32.join(home, 'Downloads');
   }
-  if (platform === 'darwin') return path.join(home, 'Downloads');
+  if (platform === 'darwin') return path.posix.join(home, 'Downloads');
 
   if (env.XDG_DOWNLOAD_DIR && path.posix.isAbsolute(env.XDG_DOWNLOAD_DIR)) return path.posix.normalize(env.XDG_DOWNLOAD_DIR);
   const configHome = env.XDG_CONFIG_HOME && path.posix.isAbsolute(env.XDG_CONFIG_HOME)
@@ -53,7 +53,7 @@ export async function defaultDownloadsDirectory({ platform = process.platform, h
 
 export async function defaultDestination(options) {
   const downloads = await defaultDownloadsDirectory(options);
-  const pathApi = (options?.platform ?? process.platform) === 'win32' ? path.win32 : path;
+  const pathApi = (options?.platform ?? process.platform) === 'win32' ? path.win32 : path.posix;
   return pathApi.join(downloads, 'PhoneHaul');
 }
 export function settingsDirectory({ platform = process.platform, env = process.env, home = os.homedir() } = {}) {
