@@ -58,8 +58,11 @@ try {
   assert.match(output, /LAN transfers: enabled/);
 
   child.kill('SIGTERM');
-  const [code] = await Promise.race([once(child, 'exit'), delay(8_000).then(() => { throw new Error('Packaged receiver did not shut down after SIGTERM'); })]);
-  assert.equal(code, 0, output);
+  const [code, signal] = await Promise.race([once(child, 'exit'), delay(8_000).then(() => { throw new Error('Packaged receiver did not shut down after SIGTERM'); })]);
+  // Windows terminates child processes for SIGTERM instead of delivering a
+  // catchable signal, so Node reports a null exit code and the signal name.
+  if (process.platform === 'win32') assert.equal(signal, 'SIGTERM', output);
+  else assert.equal(code, 0, output);
   console.log('SEA smoke test passed (startup, bundled UI, LAN listener, graceful shutdown).');
 } finally {
   if (child && child.exitCode === null) child.kill('SIGKILL');
