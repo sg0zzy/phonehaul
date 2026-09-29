@@ -65,6 +65,21 @@ jobs:
           keystore="$RUNNER_TEMP/phonehaul-release.jks"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
           chmod 600 "$keystore"
+          key_check="$RUNNER_TEMP/phonehaul-signing-check.p12"
+          if ! keytool -importkeystore \
+            -srckeystore "$keystore" \
+            -srcstorepass:env ANDROID_STORE_PASSWORD \
+            -srcalias "$ANDROID_KEY_ALIAS" \
+            -srckeypass:env ANDROID_KEY_PASSWORD \
+            -destkeystore "$key_check" \
+            -deststoretype PKCS12 \
+            -deststorepass:env ANDROID_STORE_PASSWORD \
+            -destkeypass:env ANDROID_STORE_PASSWORD \
+            -noprompt >/dev/null 2>&1; then
+            echo "Android signing check failed: verify the keystore file, alias, store password, and key password secrets."
+            exit 1
+          fi
+          rm -f "$key_check"
           echo "ANDROID_KEYSTORE_FILE=$keystore" >> "$GITHUB_ENV"
       - name: Build signed APK and Play bundle
         working-directory: android
