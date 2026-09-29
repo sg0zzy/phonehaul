@@ -8,6 +8,17 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
 
+// CI can provide the same signing values as environment variables. Local builds
+// continue to use ~/.secrets/android/phonehaul/keystore.properties.
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+    ?: (keystoreProperties["storeFile"] as? String)
+val releaseStorePassword = System.getenv("ANDROID_STORE_PASSWORD")
+    ?: (keystoreProperties["storePassword"] as? String)
+val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+    ?: (keystoreProperties["keyAlias"] as? String)
+val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+    ?: (keystoreProperties["keyPassword"] as? String)
+
 
 plugins {
     id("com.android.application")
@@ -37,11 +48,11 @@ android {
 
 signingConfigs {
     create("release") {
-        if (keystorePropertiesFile.exists()) {
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
+        if (releaseStoreFile != null && releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null) {
+            storeFile = file(releaseStoreFile)
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
         }
     }
 }
