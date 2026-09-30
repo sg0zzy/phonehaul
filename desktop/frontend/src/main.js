@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 
 const $ = (id) => document.getElementById(id);
 const message = (text) => { $('message').textContent = text || ''; };
@@ -56,4 +57,43 @@ $('send').addEventListener('click', async (event) => {
   try { await invoke('send_files'); message('Files queued for the phone.'); await refresh(); }
   catch (e) { message(String(e)); }
   finally { event.currentTarget.disabled = false; }
+});
+
+const dropArea = $('drop-area');
+dropArea.addEventListener('click', () => $('send').click());
+dropArea.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    $('send').click();
+  }
+});
+const isOverDropArea = (position) => {
+  const rect = dropArea.getBoundingClientRect();
+  const scale = window.devicePixelRatio || 1;
+  const x = position.x / scale;
+  const y = position.y / scale;
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+};
+await getCurrentWebview().onDragDropEvent(async ({ payload }) => {
+  if (payload.type === 'enter' || payload.type === 'over') {
+    dropArea.classList.toggle('dragging', isOverDropArea(payload.position));
+    return;
+  }
+  if (payload.type === 'leave') {
+    dropArea.classList.remove('dragging');
+    return;
+  }
+  dropArea.classList.remove('dragging');
+  if (!isOverDropArea(payload.position)) {
+    await invoke('clear_dropped_paths').catch(() => {});
+    return;
+  }
+  message('Queueing dropped files…');
+  try {
+    const count = await invoke('queue_dropped_paths');
+    message(count ? `${count} file${count === 1 ? '' : 's'} queued for the phone.` : 'No files found in the dropped folders.');
+    await refresh();
+  } catch (error) {
+    message(String(error));
+  }
 });

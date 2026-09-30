@@ -48,7 +48,7 @@ npm run package:appimage  # Linux AppImage (also creates the SEA executable)
 npm test
 ```
 
-SEA outputs go in `dist/` (for example, `dist/phonehaul-linux-x64`). `package:sea` packages only for the current host; build each release target on its matching OS and CPU. The Linux AppImage command also requires `appimagetool` on `PATH` or an `APPIMAGETOOL` path. If it cannot download its runtime automatically, download the matching `runtime-x86_64` or `runtime-aarch64` from [AppImage type2-runtime releases](https://github.com/AppImage/type2-runtime/releases) and set `APPIMAGE_RUNTIME` to that file. CI builds Linux x64/arm64 AppImages and SEA executables, Windows x64/arm64 and macOS x64/arm64 SEA executables, and an Android debug APK with unit tests. macOS x64 SEA support is experimental in Node.js, so that matrix leg is best-effort.
+SEA outputs go in `dist/` (for example, `dist/phonehaul-linux-x64`). `package:sea` packages only for the current host; build each release target on its matching OS and CPU. The Linux AppImage command also requires `appimagetool` on `PATH` or an `APPIMAGETOOL` path. If it cannot download its runtime automatically, download the matching `runtime-x86_64` or `runtime-aarch64` from [AppImage type2-runtime releases](https://github.com/AppImage/type2-runtime/releases) and set `APPIMAGE_RUNTIME` to that file. CI builds Linux x64/arm64 AppImages and SEA executables, macOS x64/arm64 SEA executables, and an Android debug APK with unit tests. The separate desktop job builds a Windows Tauri installer; standalone Windows SEA jobs are temporarily commented out while the Tauri packaging path is being tested. macOS x64 SEA support is experimental in Node.js, so that matrix leg is best-effort.
 
 To build the Windows `.exe` locally, use a Windows machine (the SEA package embeds that machine's Node executable). Install Node.js 24 LTS and Git; no .NET or Android SDK is needed for the desktop receiver. In PowerShell, from the repository root, run:
 
@@ -57,7 +57,7 @@ npm install --prefix receiver
 npm --prefix receiver run package:sea
 ```
 
-The standalone file is `dist\phonehaul-windows-x64.exe` on Windows x64, or `dist\phonehaul-windows-arm64.exe` on Windows ARM64. It includes its Node runtime, so end users do not need Node installed. The existing GitHub Actions workflow also builds these Windows executables and uploads them as workflow artifacts; they are executable packages, not a Setup installer.
+The standalone file is `dist\phonehaul-windows-x64.exe` on Windows x64, or `dist\phonehaul-windows-arm64.exe` on Windows ARM64. It includes its Node runtime, so end users do not need Node installed. These can still be built locally; the Windows SEA jobs are temporarily commented out in GitHub Actions while the Tauri packaging path is being tested.
 
 The source workflow remains available with `npm run dev`. To smoke-test a generated SEA executable, run `npm run smoke:sea` after packaging it.
 
@@ -103,6 +103,10 @@ ANDROID_HOME=/path/to/Android/Sdk ./gradlew :app:assembleDebug :app:testDebugUni
 
 The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Install it on an Android 11 or newer phone. Start the receiver on the same local network, scan the QR, select files or a folder, and choose COPY or MOVE. MOVE is enabled only when selected files report deletion support. MediaStore photos and videos use Android's deletion confirmation after the receiver commits them.
 
+### Build a signed Android release in GitHub Actions
+
+In GitHub, open **Actions → Android signed release → Run workflow** to build the signed APK and Play app bundle from the current branch without changing the app version. Download the `phonehaul-android-release` artifact from that workflow run. The workflow also runs for `v*` tags. It requires the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`.
+
 ## Status
 
 Implemented: local UI, QR sessions, ephemeral HTTPS certificate with QR fingerprint, streaming single-file uploads, manifest and path checks, disk preflight, conflict policies, partial files, SHA-256 verification, atomic file commit, cancellation endpoint, local progress events, persistent destination settings, and a native Android app with QR scanning, SAF and media selection, COPY, and per-file MOVE deletion. Computer → Android sending uses an ordered queue and Android MediaStore Downloads. Repeated phone → computer transfers merge into existing directories. Identical phone → computer files are detected by SHA-256 and skipped; different same-name files use the selected computer conflict policy. MOVE leaves source folders in place. Desktop SEA and Linux/Windows Tauri build scripts and CI are in place.
@@ -132,10 +136,10 @@ npm run desktop:dev
 Create Linux release bundles with:
 
 ```sh
-npm --prefix desktop run build -- --bundles appimage,deb
+npm --prefix desktop run build -- --bundles appimage
 ```
 
-The build first creates a standalone Linux receiver executable and bundles it with Tauri. The Debian package and AppImage are written under `desktop/src-tauri/target/release/bundle/deb/` and `desktop/src-tauri/target/release/bundle/appimage/`.
+The build first creates a standalone Linux receiver executable and bundles it with Tauri. The AppImage is written under `desktop/src-tauri/target/release/bundle/appimage/`. Debian package generation is currently disabled because the AppImage is the Linux distribution target.
 
 ## Windows build
 

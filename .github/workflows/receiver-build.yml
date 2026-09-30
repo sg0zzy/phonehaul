@@ -36,68 +36,6 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-  android-release:
-    name: Android signed release packages
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-      - uses: android-actions/setup-android@v4
-      - name: Install Android SDK platform
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Prepare Android release keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          : "${ANDROID_KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64 secret}"
-          : "${ANDROID_STORE_PASSWORD:?Missing ANDROID_STORE_PASSWORD secret}"
-          : "${ANDROID_KEY_ALIAS:?Missing ANDROID_KEY_ALIAS secret}"
-          : "${ANDROID_KEY_PASSWORD:?Missing ANDROID_KEY_PASSWORD secret}"
-          keystore="$RUNNER_TEMP/phonehaul-release.jks"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
-          chmod 600 "$keystore"
-          key_check="$RUNNER_TEMP/phonehaul-signing-check.p12"
-          key_check_log="$RUNNER_TEMP/phonehaul-signing-check.log"
-          if ! keytool -importkeystore \
-            -srckeystore "$keystore" \
-            -srcstorepass:env ANDROID_STORE_PASSWORD \
-            -srcalias "$ANDROID_KEY_ALIAS" \
-            -srckeypass:env ANDROID_KEY_PASSWORD \
-            -destkeystore "$key_check" \
-            -deststoretype PKCS12 \
-            -deststorepass:env ANDROID_STORE_PASSWORD \
-            -destkeypass:env ANDROID_STORE_PASSWORD \
-            -noprompt >"$key_check_log" 2>&1; then
-            cat "$key_check_log"
-            echo "Android signing check failed: verify the keystore file, alias, store password, and key password secrets."
-            exit 1
-          fi
-          rm -f "$key_check" "$key_check_log"
-          echo "ANDROID_KEYSTORE_FILE=$keystore" >> "$GITHUB_ENV"
-      - name: Build signed APK and Play bundle
-        working-directory: android
-        env:
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease :app:bundleRelease
-      - uses: actions/upload-artifact@v6
-        with:
-          name: phonehaul-android-release
-          path: |
-            android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-
   sea:
     strategy:
       fail-fast: false
@@ -109,12 +47,14 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
-          - runner: windows-2025
-            platform: windows
-            arch: x64
-          - runner: windows-11-arm
-            platform: windows
-            arch: arm64
+          # Re-enable these standalone Windows SEA builds after the Tauri
+          # Windows packaging path has been tested and stabilized.
+          # - runner: windows-2025
+          #   platform: windows
+          #   arch: x64
+          # - runner: windows-11-arm
+          #   platform: windows
+          #   arch: arm64
           - runner: macos-15-intel
             platform: macos
             arch: x64
@@ -174,10 +114,10 @@ jobs:
         include:
           - platform: linux
             runner: ubuntu-24.04
-            bundles: appimage,deb
-            artifact-path: |
-              desktop/src-tauri/target/release/bundle/appimage/*
-              desktop/src-tauri/target/release/bundle/deb/*
+            bundles: appimage
+            # To publish a Debian package too, use `appimage,deb` and add the
+            # bundle/deb path below.
+            artifact-path: desktop/src-tauri/target/release/bundle/appimage/PhoneHaul_*.AppImage
           - platform: windows
             runner: windows-2025
             bundles: nsis

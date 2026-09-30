@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -20,6 +20,9 @@ struct Service {
     error: Option<String>,
 }
 type Shared = Arc<Mutex<Service>>;
+
+#[derive(Default)]
+struct PendingDroppedPaths(Mutex<Option<(Instant, Vec<PathBuf>)>>);
 
 fn drain_stdout<R, F>(reader: R, mut on_line: F) -> std::thread::JoinHandle<()>
 where
@@ -270,45 +273,136 @@ async fn send_files(app: tauri::AppHandle, service: State<'_, Shared>) -> Result
     let Some(paths) = rx.await.map_err(|e| e.to_string())? else {
         return Ok(());
     };
+    let paths = paths
+        .into_iter()
+        .map(|path| path.into_path().map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    queue_paths(&service, paths, false).await?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn queue_dropped_paths(
+    service: State<'_, Shared>,
+    dropped: State<'_, PendingDroppedPaths>,
+) -> Result<usize, String> {
+    let Some((created, paths)) = dropped.0.lock().unwrap().take() else {
+        return Err("No recent file drop was found".into());
+    };
+    if created.elapsed() > Duration::from_secs(30) {
+        return Err("The dropped files expired; drop them again to send".into());
+    }
+    if paths.is_empty() {
+        return Err("No files were dropped".into());
+    }
+    queue_paths(&service, paths, true).await
+}
+
+#[tauri::command]
+fn clear_dropped_paths(dropped: State<'_, PendingDroppedPaths>) {
+    dropped.0.lock().unwrap().take();
+}
+
+async fn queue_paths(
+    service: &Shared,
+    paths: Vec<PathBuf>,
+    allow_directories: bool,
+) -> Result<usize, String> {
     let (root, live) = {
-        let mut s = service.lock().unwrap();
-        (s.root.clone(), running(&mut s))
+        let mut service = service.lock().unwrap();
+        (service.root.clone(), running(&mut service))
     };
     if !live {
         return Err("PhoneHaul server is stopped".into());
     }
-    let client = Client::new();
-    for path in paths {
-        let file_path = path
-            .into_path()
-            .map_err(|e| e.to_string())?
-            .canonicalize()
-            .map_err(|e| e.to_string())?;
-        let meta = tokio::fs::metadata(&file_path)
+
+    let mut pending = paths
+        .into_iter()
+        .rev()
+        .map(|path| (path, None::<PathBuf>))
+        .collect::<Vec<_>>();
+    let mut files = Vec::<(PathBuf, String)>::new();
+    while let Some((path, relative_prefix)) = pending.pop() {
+        let metadata = tokio::fs::symlink_metadata(&path)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Could not inspect {}: {e}", path.display()))?;
+        if metadata.file_type().is_symlink() {
+            return Err(format!("Symbolic links cannot be sent: {}", path.display()));
+        }
+
+        if metadata.is_dir() {
+            if !allow_directories {
+                return Err(format!("Expected a file: {}", path.display()));
+            }
+            let directory_name = path
+                .file_name()
+                .ok_or_else(|| format!("Folder has no name: {}", path.display()))?;
+            let relative_directory =
+                relative_prefix.unwrap_or_else(|| PathBuf::from(directory_name));
+            let mut entries = tokio::fs::read_dir(&path)
+                .await
+                .map_err(|e| format!("Could not read folder {}: {e}", path.display()))?;
+            let mut children = Vec::new();
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(|e| format!("Could not read folder {}: {e}", path.display()))?
+            {
+                children.push((entry.path(), entry.file_name()));
+            }
+            children.sort_by(|a, b| a.1.cmp(&b.1));
+            for (child, name) in children.into_iter().rev() {
+                pending.push((child, Some(relative_directory.join(name))));
+            }
+            continue;
+        }
+
+        if !metadata.is_file() {
+            return Err(format!("Not a regular file: {}", path.display()));
+        }
+        let name = path
+            .file_name()
+            .ok_or_else(|| format!("File has no name: {}", path.display()))?;
+        let relative = relative_prefix.unwrap_or_else(|| PathBuf::from(name));
+        if relative.as_os_str().is_empty()
+            || relative
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        {
+            return Err(format!("Invalid relative path for {}", path.display()));
+        }
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        let file_path = tokio::fs::canonicalize(&path)
+            .await
+            .map_err(|e| format!("Could not resolve {}: {e}", path.display()))?;
+        files.push((file_path, relative));
+    }
+
+    if files.is_empty() {
+        return Ok(0);
+    }
+    let client = Client::new();
+    for (file_path, relative) in &files {
+        let meta = tokio::fs::metadata(file_path)
+            .await
+            .map_err(|e| format!("Could not inspect {}: {e}", file_path.display()))?;
         if !meta.is_file() {
             return Err(format!("Not a regular file: {}", file_path.display()));
         }
-        let name = file_path
-            .file_name()
-            .ok_or("File has no name")?
-            .to_string_lossy()
-            .into_owned();
-        let file = tokio::fs::File::open(&file_path)
+        let file = tokio::fs::File::open(file_path)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Could not open {}: {e}", file_path.display()))?;
         let response = client
             .post(format!("{root}/api/send/items"))
             .header(header::CONTENT_LENGTH, meta.len())
             .header(
                 "X-PhoneHaul-Relative-Path",
-                urlencoding::encode(&name).into_owned(),
+                urlencoding::encode(relative).into_owned(),
             )
             .body(Body::wrap_stream(ReaderStream::new(file)))
             .send()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Could not queue {}: {e}", file_path.display()))?;
         if !response.status().is_success() {
             let status = response.status();
             let detail = response.text().await.unwrap_or_default();
@@ -318,7 +412,7 @@ async fn send_files(app: tauri::AppHandle, service: State<'_, Shared>) -> Result
             ));
         }
     }
-    Ok(())
+    Ok(files.len())
 }
 fn start_events(app: tauri::AppHandle, shared: Shared) {
     tauri::async_runtime::spawn(async move {
@@ -367,6 +461,13 @@ fn start_events(app: tauri::AppHandle, shared: Shared) {
 }
 fn main() {
     tauri::Builder::default()
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                if let Some(dropped) = webview.try_state::<PendingDroppedPaths>() {
+                    *dropped.0.lock().unwrap() = Some((Instant::now(), paths.clone()));
+                }
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -388,13 +489,16 @@ fn main() {
             let shared: Shared = Arc::new(Mutex::new(service));
             start_events(app.handle().clone(), shared.clone());
             app.manage(shared);
+            app.manage(PendingDroppedPaths::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
             refresh_qr,
             set_destination,
-            send_files
+            send_files,
+            queue_dropped_paths,
+            clear_dropped_paths
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tauri application")
