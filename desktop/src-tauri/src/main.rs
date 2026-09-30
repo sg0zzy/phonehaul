@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -20,9 +20,6 @@ struct Service {
     error: Option<String>,
 }
 type Shared = Arc<Mutex<Service>>;
-
-#[derive(Default)]
-struct PendingDroppedPaths(Mutex<Option<(Instant, Vec<PathBuf>)>>);
 
 fn drain_stdout<R, F>(reader: R, mut on_line: F) -> std::thread::JoinHandle<()>
 where
@@ -284,23 +281,12 @@ async fn send_files(app: tauri::AppHandle, service: State<'_, Shared>) -> Result
 #[tauri::command]
 async fn queue_dropped_paths(
     service: State<'_, Shared>,
-    dropped: State<'_, PendingDroppedPaths>,
+    paths: Vec<PathBuf>,
 ) -> Result<usize, String> {
-    let Some((created, paths)) = dropped.0.lock().unwrap().take() else {
-        return Err("No recent file drop was found".into());
-    };
-    if created.elapsed() > Duration::from_secs(30) {
-        return Err("The dropped files expired; drop them again to send".into());
-    }
     if paths.is_empty() {
         return Err("No files were dropped".into());
     }
     queue_paths(&service, paths, true).await
-}
-
-#[tauri::command]
-fn clear_dropped_paths(dropped: State<'_, PendingDroppedPaths>) {
-    dropped.0.lock().unwrap().take();
 }
 
 async fn queue_paths(
@@ -461,13 +447,6 @@ fn start_events(app: tauri::AppHandle, shared: Shared) {
 }
 fn main() {
     tauri::Builder::default()
-        .on_webview_event(|webview, event| {
-            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
-                if let Some(dropped) = webview.try_state::<PendingDroppedPaths>() {
-                    *dropped.0.lock().unwrap() = Some((Instant::now(), paths.clone()));
-                }
-            }
-        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -489,7 +468,6 @@ fn main() {
             let shared: Shared = Arc::new(Mutex::new(service));
             start_events(app.handle().clone(), shared.clone());
             app.manage(shared);
-            app.manage(PendingDroppedPaths::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -497,8 +475,7 @@ fn main() {
             refresh_qr,
             set_destination,
             send_files,
-            queue_dropped_paths,
-            clear_dropped_paths
+            queue_dropped_paths
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tauri application")

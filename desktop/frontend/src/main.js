@@ -67,16 +67,13 @@ dropArea.addEventListener('keydown', (event) => {
     $('send').click();
   }
 });
-const isOverDropArea = (position) => {
-  const rect = dropArea.getBoundingClientRect();
-  const scale = window.devicePixelRatio || 1;
-  const x = position.x / scale;
-  const y = position.y / scale;
-  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-};
 await getCurrentWebview().onDragDropEvent(async ({ payload }) => {
   if (payload.type === 'enter' || payload.type === 'over') {
-    dropArea.classList.toggle('dragging', isOverDropArea(payload.position));
+    // Tauri reports native drag positions in physical pixels, while the DOM
+    // uses CSS pixels. The mapping can be wrong with display scaling, so treat
+    // the whole app window as the drop target instead of silently rejecting a
+    // valid drop based on a fragile coordinate comparison.
+    dropArea.classList.add('dragging');
     return;
   }
   if (payload.type === 'leave') {
@@ -84,13 +81,9 @@ await getCurrentWebview().onDragDropEvent(async ({ payload }) => {
     return;
   }
   dropArea.classList.remove('dragging');
-  if (!isOverDropArea(payload.position)) {
-    await invoke('clear_dropped_paths').catch(() => {});
-    return;
-  }
   message('Queueing dropped files…');
   try {
-    const count = await invoke('queue_dropped_paths');
+    const count = await invoke('queue_dropped_paths', { paths: payload.paths });
     message(count ? `${count} file${count === 1 ? '' : 's'} queued for the phone.` : 'No files found in the dropped folders.');
     await refresh();
   } catch (error) {
