@@ -61,23 +61,53 @@ object Selection {
 
     fun addTree(context: Context, uri: Uri, existing: List<SourceItem>): List<SourceItem> {
         val root = DocumentFile.fromTreeUri(context, uri) ?: throw IllegalArgumentException("Unable to read selected folder")
+        require(root.isDirectory) { "Selected item is not a folder" }
         val used = existing.map { it.relativePath.substringBefore('/') }.toSet()
         val rootName = uniqueTopLevel(safeName(root.name ?: "Folder"), used)
         val result = mutableListOf<SourceItem>()
-        fun visit(document: DocumentFile, relative: String, depth: Int) {
-            require(depth < 100 && result.size < 100_000) { "Folder is too large or deeply nested" }
-            val isDirectory = document.isDirectory
-            result += SourceItem(uri = document.uri, relativePath = relative, size = if (isDirectory) null else document.length().takeIf { it >= 0 }, modified = document.lastModified().takeIf { it > 0 }, isDirectory = isDirectory, deleteCapability = capability(context.contentResolver, document.uri))
-            if (isDirectory) {
+        val resolver = context.contentResolver
+        val treeId = DocumentsContract.getTreeDocumentId(uri)
+        var visited = 0
+        fun visit(documentId: String, relative: String, depth: Int) {
+            require(depth < 100) { "Folder is too large or deeply nested" }
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, documentId)
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                DocumentsContract.Document.COLUMN_FLAGS
+            )
+            val cursor = resolver.query(childrenUri, projection, null, null, null)
+                ?: throw IllegalArgumentException("Unable to read selected folder")
+            cursor.use {
                 val usedChildren = mutableSetOf<String>()
-                for (child in document.listFiles()) {
-                    val name = uniqueTopLevel(safeName(child.name ?: "unnamed"), usedChildren)
+                while (it.moveToNext()) {
+                    require(++visited <= 100_000) { "Folder is too large or deeply nested" }
+                    val childId = it.getString(0)
+                    val name = uniqueTopLevel(safeName(it.getString(1) ?: "unnamed"), usedChildren)
                     usedChildren += name
-                    visit(child, "$relative/$name", depth + 1)
+                    val childPath = "$relative/$name"
+                    if (it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        visit(childId, childPath, depth + 1)
+                    } else {
+                        val childUri = DocumentsContract.buildDocumentUriUsingTree(uri, childId)
+                        val flags = if (it.isNull(5)) 0 else it.getInt(5)
+                        result += SourceItem(
+                            uri = childUri,
+                            relativePath = childPath,
+                            size = if (it.isNull(3)) null else it.getLong(3).takeIf { size -> size >= 0 },
+                            modified = if (it.isNull(4)) null else it.getLong(4).takeIf { time -> time > 0 },
+                            isDirectory = false,
+                            deleteCapability = if (flags and DocumentsContract.Document.FLAG_SUPPORTS_DELETE != 0) DeleteCapability.DIRECT else DeleteCapability.READ_ONLY
+                        )
+                    }
                 }
             }
         }
-        visit(root, rootName, 0)
+        visit(treeId, rootName, 0)
+        require(result.isNotEmpty()) { "Selected folder contains no files" }
         return result
     }
 

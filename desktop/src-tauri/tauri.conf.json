@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PhoneHaul",
+  "version": "0.1.0",
+  "identifier": "org.phonehaul.desktop",
+  "build": {
+    "beforeDevCommand": { "script": "npm run build:sidecar && npm run frontend:dev", "wait": false },
+    "beforeBuildCommand": "npm run frontend:build && npm run build:sidecar && npm run stage:appimage-libraries",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../frontend-dist"
+  },
+  "app": {
+    "windows": [{ "title": "PhoneHaul", "width": 820, "height": 720, "minWidth": 600, "minHeight": 500 }],
+    "security": { "csp": "default-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
+  },
+  "bundle": {
+    "active": true,
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "category": "Utility",
+    "shortDescription": "Local network phone file transfer",
+    "resources": ["resources/phonehaul-server*"],
+    "linux": {
+      "appimage": {
+        "files": {
+          "/usr/lib/libldap.so.2": "bundle-support/libldap.so.2"
+        }
+      }
+    }
+  }
+}

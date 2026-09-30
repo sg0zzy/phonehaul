@@ -13,7 +13,7 @@ class FileTransition(initial: FileState = FileState.SELECTED) {
             FileState.QUEUED -> setOf(FileState.SENDING, FileState.CANCELLED)
             FileState.SENDING -> setOf(FileState.SENT, FileState.SKIPPED, FileState.TRANSFER_FAILED, FileState.CANCELLED)
             FileState.SENT -> setOf(FileState.VERIFYING, FileState.TRANSFER_FAILED)
-            FileState.VERIFYING -> setOf(FileState.COMMITTED, FileState.VERIFY_FAILED)
+            FileState.VERIFYING -> setOf(FileState.COMMITTED, FileState.ALREADY_PRESENT, FileState.VERIFY_FAILED)
             FileState.COMMITTED, FileState.ALREADY_PRESENT -> setOf(FileState.COPIED, FileState.DELETING_SOURCE)
             FileState.DELETING_SOURCE -> setOf(FileState.MOVED, FileState.DELETE_FAILED)
             else -> emptySet()

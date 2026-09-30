@@ -1,6 +1,8 @@
 # PhoneHaul
 
-**Scan. Select. Move.** PhoneHaul moves files from an Android phone to a computer on the same local network. It has no accounts, cloud service, or Internet relay.
+**Scan. Select. Move.** PhoneHaul transfers files in both directions between an Android phone and a computer on the same local network. It has no accounts, cloud service, or Internet relay.
+
+You can also send files or folders from the computer: drop them on the receiver page or use **Select files** / **Select folder**. Files enter an ordered queue immediately, wait if the phone is disconnected, and send automatically while the Android app is open. Every file goes directly into Android's public `Downloads` directory; folder contents are flattened. The Android destination cannot be changed. Existing names receive a numeric suffix such as `report (1).pdf`; existing files are not overwritten. Empty folders are not preserved. Interrupted files are retried from the start by adding them again; there is no partial resume or background Android receiver.
 
 This repository contains the desktop receiver, a native Android client, and a fake sender for protocol testing. The fake sender never deletes source files; MOVE deletion belongs to the Android client.
 
@@ -103,8 +105,46 @@ The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Insta
 
 ## Status
 
-Implemented: local UI, QR sessions, ephemeral HTTPS certificate with QR fingerprint, streaming single-file uploads, manifest and path checks, disk preflight, conflict policies, partial files, SHA-256 verification, atomic file commit, cancellation endpoint, local progress events, persistent destination settings, and a native Android app with QR scanning, SAF and media selection, COPY, and per-file MOVE deletion. Repeated transfers merge into existing directories. Identical files are detected by SHA-256 and skipped; different same-name files use the selected conflict policy. MOVE leaves source folders in place. Desktop SEA and Linux AppImage build scripts and cross-platform build CI are in place.
+Implemented: local UI, QR sessions, ephemeral HTTPS certificate with QR fingerprint, streaming single-file uploads, manifest and path checks, disk preflight, conflict policies, partial files, SHA-256 verification, atomic file commit, cancellation endpoint, local progress events, persistent destination settings, and a native Android app with QR scanning, SAF and media selection, COPY, and per-file MOVE deletion. Computer → Android sending uses an ordered queue and Android MediaStore Downloads. Repeated phone → computer transfers merge into existing directories. Identical phone → computer files are detected by SHA-256 and skipped; different same-name files use the selected computer conflict policy. MOVE leaves source folders in place. Desktop SEA and Linux/Windows Tauri build scripts and CI are in place.
 
-Pending: Windows Setup and macOS DMG packaging, public code signing/notarization, and device-level testing across Android storage providers. Android 11+ SAF restrictions still apply; some folders and provider-backed files cannot be selected or deleted. The app reports files that could not be deleted after transfer.
+Pending: macOS packaging, public code signing/notarization, and device-level testing across Android storage providers. Android 11+ SAF restrictions still apply; some folders and provider-backed files cannot be selected or deleted. The app reports files that could not be deleted after transfer.
 
 See [protocol](docs/protocol.md), [security](docs/security.md), and [architecture](docs/architecture.md).
+# Desktop / Tauri development
+
+The desktop app lives in `desktop/` and currently builds for Linux and Windows. It wraps the existing PhoneHaul Node receiver as a bundled sidecar; the transfer protocol, pairing, receive pipeline, disk-backed send queue, and configuration remain in `receiver/`. Rust supervises the sidecar, streams selected files into its existing send API, and forwards its SSE status updates to the small frontend. Linux uses XDG settings paths; Windows uses the platform's application data directory.
+
+## Debian setup
+
+Install Node.js 22 or newer and the Tauri Linux build dependencies:
+
+```sh
+sudo apt install build-essential curl wget file libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libldap2
+```
+
+Then install the project dependencies and run the desktop app:
+
+```sh
+npm --prefix desktop install
+npm run desktop:dev
+```
+
+Create Linux release bundles with:
+
+```sh
+npm --prefix desktop run build -- --bundles appimage,deb
+```
+
+The build first creates a standalone Linux receiver executable and bundles it with Tauri. The Debian package and AppImage are written under `desktop/src-tauri/target/release/bundle/deb/` and `desktop/src-tauri/target/release/bundle/appimage/`.
+
+## Windows build
+
+On Windows, install Node.js 24, the Rust stable toolchain, and NSIS. Run this from Git Bash (the build must run on Windows; Linux cross-compilation is not supported):
+
+```sh
+bash scripts/build-desktop-windows.sh
+```
+
+The script installs the locked Node dependencies, builds the Windows receiver sidecar and Tauri NSIS installer, then prints the installer path under `desktop/src-tauri/target/release/bundle/nsis/`. The installer is currently unsigned. GitHub Actions uses the same script and uploads the NSIS installer as the `phonehaul-desktop-windows` workflow artifact. macOS remains a future target.
+
+The app starts the receiver automatically, shuts it down when the desktop process exits, provides native receive-directory and send-file pickers, and displays receiver, phone, transfer, and queue status. System tray support, folder selection in the desktop send UI, and restart controls remain follow-up work.

@@ -54,6 +54,23 @@ test('commits verified data and renames collisions',async()=>{
   assert.deepEqual((await readdir(root)).filter(x=>x.endsWith('.phonehaul-partial')),[]);
 });
 
+test('appends files and verifies streamed hashes before reporting a matching destination',async()=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'phonehaul-incremental-'));
+  const receiver=new TransferReceiver({destination:root,conflict:'rename'});
+  const first=await receiver.create(manifest([{id:'a',type:'file',relativePath:'Screenshots/one.png',size:3}]));
+  const stream=Readable.from([Buffer.from('one')]);stream.headers={'content-length':'3'};
+  assert.equal((await receiver.upload(first.transferId,'a',stream)).sha256,digest('one'));
+  assert.equal((await receiver.addItem(first.transferId,{id:'b',type:'file',relativePath:'Screenshots/two.png',size:3})).status,'queued');
+  const second=Readable.from([Buffer.from('two')]);second.headers={'content-length':'3'};
+  assert.equal((await receiver.upload(first.transferId,'b',second)).status,'committed');
+  assert.equal(receiver.finish(first.transferId).completedItems,2);
+  assert.equal(await readFile(path.join(root,'Screenshots','two.png'),'utf8'),'two');
+  const retry=await receiver.create(manifest([{id:'retry',type:'file',relativePath:'Screenshots/one.png',size:3}]));
+  const duplicate=Readable.from([Buffer.from('one')]);duplicate.headers={'content-length':'3'};
+  assert.equal((await receiver.upload(retry.transferId,'retry',duplicate)).status,'already_present');
+  assert.deepEqual(await readdir(path.join(root,'Screenshots')),['one.png','two.png']);
+});
+
 test('hash mismatch leaves source destination untouched and cleans partial',async()=>{
   const root=await mkdtemp(path.join(os.tmpdir(),'phonehaul-hash-'));
   const receiver=new TransferReceiver({destination:root,conflict:'rename'});
@@ -98,4 +115,20 @@ test('skip never reports committed',async()=>{
   const t=await receiver.create(manifest([file('a','x',3)]));
   assert.equal(t.items.find(item=>item.id==='a').status,'skipped');
   assert.equal(receiver.summary().completedItems,0);assert.equal(await readFile(path.join(root,'x'),'utf8'),'old');
+});
+
+test('streamed hash can prove an identical destination under skip policy',async()=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'phonehaul-stream-skip-'));
+  await writeFile(path.join(root,'x'),'same');
+  const receiver=new TransferReceiver({destination:root,conflict:'skip'});
+  const t=await receiver.create(manifest([{id:'a',type:'file',relativePath:'x',size:4}]));
+  assert.equal(t.items[0].status,'queued');
+  const matching=Readable.from([Buffer.from('same')]);matching.headers={'content-length':'4'};
+  assert.equal((await receiver.upload(t.transferId,'a',matching)).status,'already_present');
+  const second=await receiver.addItem(t.transferId,{id:'b',type:'file',relativePath:'y',size:4});
+  assert.equal(second.status,'queued');
+  await writeFile(path.join(root,'y'),'old');
+  const different=Readable.from([Buffer.from('new!')]);different.headers={'content-length':'4'};
+  assert.equal((await receiver.upload(t.transferId,'b',different)).status,'skipped');
+  assert.equal(await readFile(path.join(root,'y'),'utf8'),'old');
 });

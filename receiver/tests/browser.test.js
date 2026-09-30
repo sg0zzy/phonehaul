@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { browserCommand, openDefaultBrowser } from '../src/server/browser.js';
+import { page } from '../src/web/page.js';
+import vm from 'node:vm';
 
 test('browser helper selects platform commands without shell interpolation', () => {
   const url = 'http://127.0.0.1:57321/?a=1&b=two';
@@ -34,4 +36,15 @@ test('browser opening reports synchronous failures and does not throw', () => {
     onError: error => failures.push(error)
   }), false);
   assert.equal(failures.length, 1);
+});
+
+test('send card has file and folder pickers and its browser script parses', () => {
+  const html = page();
+  assert.match(html, /<h2>Send to phone<\/h2>/);
+  assert.match(html, /id="sendFiles" type="file" multiple/);
+  assert.match(html, /id="sendFolder" type="file" webkitdirectory multiple/);
+  assert.match(html, /directly to Downloads on Android/);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+  assert.doesNotThrow(() => new vm.Script(script));
 });

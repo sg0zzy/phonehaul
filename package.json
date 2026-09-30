@@ -9,6 +9,8 @@
     "package:sea": "npm --prefix receiver run package:sea",
     "package:appimage": "npm --prefix receiver run package:appimage",
     "dist": "npm run package:sea",
-    "smoke:sea": "npm --prefix receiver run smoke:sea"
+    "smoke:sea": "npm --prefix receiver run smoke:sea",
+    "desktop:dev": "npm --prefix desktop run dev",
+    "desktop:build": "npm --prefix desktop run build"
   }
 }

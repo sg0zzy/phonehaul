@@ -15,7 +15,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
-data class PreparedFile(val source: SourceItem, val size: Long, val sha256: String)
+data class PreparedFile(val source: SourceItem, val size: Long, val sha256: String?)
 data class UploadResult(val status: String, val size: Long?, val sha256: String?)
 data class TransferPlan(val transferId: String, val dispositions: Map<String, String>)
 class ReceiverHttpException(val statusCode: Int, message: String) : IOException(message)
@@ -44,6 +44,7 @@ class ReceiverClient(private val resolver: ContentResolver, private val pairing:
             connectTimeout = 10_000
             readTimeout = 30_000
             setRequestProperty("Authorization", "Bearer ${pairing.token}")
+            setRequestProperty("X-PhoneHaul-Capabilities", "send-to-phone")
             setRequestProperty("Accept", "application/json")
             useCaches = false
         }
@@ -73,12 +74,15 @@ class ReceiverClient(private val resolver: ContentResolver, private val pairing:
         } finally { conn.disconnect(); active = null }
     }
 
-    fun connect() {
+    fun connect(): Boolean {
         val response = call("POST", "/api/session/connect")
         if (response.optInt("protocol") != 1) throw IOException("Unsupported receiver protocol")
+        val capabilities = response.optJSONArray("capabilities") ?: throw IOException("Computer receiver needs an update to support streaming transfers")
+        if ((0 until capabilities.length()).none { capabilities.optString(it) == "incremental-transfer" }) throw IOException("Computer receiver needs an update to support streaming transfers")
+        return (0 until capabilities.length()).any { capabilities.optString(it) == "send-to-phone" }
     }
 
-    suspend fun hashAndSize(uri: Uri): Pair<Long, String> {
+    suspend fun hashAndSize(uri: Uri, onBytes: (Long) -> Unit = {}): Pair<Long, String> {
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot read selected file")
@@ -90,6 +94,7 @@ class ReceiverClient(private val resolver: ContentResolver, private val pairing:
                 if (n < 0) break
                 digest.update(buffer, 0, n)
                 total += n
+                onBytes(total)
             }
         }
         return total to digest.digest().hex()
@@ -101,7 +106,7 @@ class ReceiverClient(private val resolver: ContentResolver, private val pairing:
             val entry = JSONObject().put("id", item.id).put("type", if (item.isDirectory) "directory" else "file").put("relativePath", item.relativePath)
             if (!item.isDirectory) {
                 entry.put("size", prepared.getValue(item.id).size)
-                entry.put("sha256", prepared.getValue(item.id).sha256)
+                prepared.getValue(item.id).sha256?.let { entry.put("sha256", it) }
                 item.modified?.let { entry.put("modified", it) }
             }
             entries.put(entry)
@@ -118,14 +123,24 @@ class ReceiverClient(private val resolver: ContentResolver, private val pairing:
         return TransferPlan(response.getString("transferId"), statuses)
     }
 
+    fun appendFile(transferId: String, file: PreparedFile): String {
+        val item = file.source
+        val entry = JSONObject().put("id", item.id).put("type", "file")
+            .put("relativePath", item.relativePath).put("size", file.size)
+        file.sha256?.let { entry.put("sha256", it) }
+        item.modified?.let { entry.put("modified", it) }
+        return call("POST", "/api/transfers/$transferId/items", entry).getString("status")
+    }
+
     suspend fun upload(transferId: String, file: PreparedFile, onBytes: (Long) -> Unit): UploadResult {
         val conn = connection("PUT", "/api/transfers/$transferId/files/${file.source.id}")
         active = conn
         try {
             conn.doOutput = true
             conn.readTimeout = 60_000
-            conn.setRequestProperty("X-PhoneHaul-SHA256", file.sha256)
+            file.sha256?.let { conn.setRequestProperty("X-PhoneHaul-SHA256", it) }
             conn.setFixedLengthStreamingMode(file.size)
+            val digest = MessageDigest.getInstance("SHA-256")
             val stream = resolver.openInputStream(file.source.uri) ?: throw IOException("Cannot reopen selected file")
             stream.use { input -> conn.outputStream.use { output ->
                 val buffer = ByteArray(256 * 1024)
@@ -133,14 +148,16 @@ class ReceiverClient(private val resolver: ContentResolver, private val pairing:
                     currentCoroutineContext().ensureActive()
                     val n = input.read(buffer)
                     if (n < 0) break
+                    digest.update(buffer, 0, n)
                     output.write(buffer, 0, n)
                     onBytes(n.toLong())
                 }
             } }
+            val actualHash = digest.digest().hex()
             val response = readResponse(conn)
             val status = response.getString("status")
-            if (status != "committed" && status != "skipped") throw IOException("Unexpected receiver acknowledgement")
-            if (status == "committed" && (response.optLong("size", -1) != file.size || response.optString("sha256") != file.sha256)) throw IOException("Receiver acknowledgement mismatch")
+            if (status != "committed" && status != "skipped" && status != "already_present") throw IOException("Unexpected receiver acknowledgement")
+            if (status != "skipped" && (response.optLong("size", -1) != file.size || response.optString("sha256") != actualHash || (file.sha256 != null && file.sha256 != actualHash))) throw IOException("Receiver acknowledgement mismatch")
             return UploadResult(status, response.optLong("size"), response.optString("sha256"))
         } finally { conn.disconnect(); active = null }
     }
@@ -148,6 +165,24 @@ class ReceiverClient(private val resolver: ContentResolver, private val pairing:
     fun finish(transferId: String) { call("POST", "/api/transfers/$transferId/finish") }
     fun cancel(transferId: String) { call("POST", "/api/transfers/$transferId/cancel") }
     fun cancelActive() { active?.disconnect() }
+
+    fun nextIncoming(): IncomingFile? {
+        val response = call("GET", "/api/send/next")
+        if (response.isNull("item") && !response.has("id")) return null
+        return IncomingFile(response.getString("id"), response.getString("relativePath"), response.getLong("size"), response.getString("sha256"))
+    }
+
+    fun receiveIncoming(file: IncomingFile) {
+        val conn = connection("GET", "/api/send/${file.id}/content")
+        try {
+            if (conn.responseCode != 200 || conn.contentLengthLong != file.size) throw IOException("Invalid incoming file response")
+            conn.inputStream.use { input -> PhoneInbox(resolver).save(file, input) }
+        } finally { conn.disconnect() }
+    }
+
+    fun acknowledgeIncoming(id: String, state: String, error: String? = null) {
+        call("POST", "/api/send/$id/complete", JSONObject().put("state", state).put("error", error))
+    }
 }
 
 private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }

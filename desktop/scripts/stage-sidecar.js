@@ -1,0 +1,12 @@
+import { copyFile, mkdir, chmod } from 'node:fs/promises';
+import path from 'node:path';
+import process from 'node:process';
+const root = path.resolve(import.meta.dirname, '../..');
+const platform = { win32: 'windows', darwin: 'macos' }[process.platform] ?? process.platform;
+const extension = process.platform === 'win32' ? '.exe' : '';
+const source = path.join(root, 'dist', `phonehaul-${platform}-${process.arch}${extension}`);
+const target = path.join(root, 'desktop/src-tauri/resources', `phonehaul-server${extension}`);
+await mkdir(path.dirname(target), { recursive: true });
+await copyFile(source, target);
+if (process.platform !== 'win32') await chmod(target, 0o755);
+console.log(`Staged ${platform} server sidecar: ${target}`);

@@ -6,6 +6,7 @@ import selfsigned from 'selfsigned';
 import { PairingSession, fingerprint, localAddress } from '../security/pairing.js';
 import { loadSettings, saveSettings, defaultSettingsPath } from '../settings/store.js';
 import { TransferReceiver, findPartials } from '../transfer/receiver.js';
+import { SendQueue } from '../transfer/send-queue.js';
 import { page } from '../web/page.js';
 import { openDefaultBrowser } from './browser.js';
 
@@ -25,13 +26,24 @@ export async function startReceiver({ host = localAddress(), uiHost = '127.0.0.1
   const clients = new Set();
   let lastUiHeartbeat = null;
   let closeReceiver = async () => {};
-  const uiState = () => ({ transfer: transfer.summary(), connected: session.connected, pairingVersion });
+  let lastPhoneSeen = 0;
+  let phoneSupportsSend = false;
+  const phoneOnline = () => session.connected && (!phoneSupportsSend || Date.now() - lastPhoneSeen < 15_000);
+  const uiState = () => ({ transfer: transfer.summary(false), connected: phoneOnline(), pairingComplete: session.connected, sendConnected: phoneOnline() && phoneSupportsSend, pairingVersion, sendQueue: sendQueue.summary() });
   const broadcast = () => { const data=`data: ${JSON.stringify(uiState())}\n\n`; for(const client of clients)client.write(data); };
   const transfer = new TransferReceiver(settings, summary => { broadcast(); if(summary?.finished)log(summary.cancelled?'transfer cancelled':'transfer completed',summary.transferId); });
-  const refreshPairing = () => { session = new PairingSession(); pairingVersion++; log('session created','expires in 5 minutes if unused'); broadcast(); };
+  const sendQueue = new SendQueue(() => { if(sendQueue.activeResponse)lastPhoneSeen=Date.now(); broadcast(); });
+  const refreshPairing = () => { session = new PairingSession(); phoneSupportsSend = false; pairingVersion++; log('session created','expires in 5 minutes if unused'); broadcast(); };
   const refreshExpiredPairing = () => { if(session.expired()) refreshPairing(); };
   const pairingTimer = setInterval(refreshExpiredPairing, 1000);
   pairingTimer.unref();
+  let wasPhoneOnline = false;
+  const connectionTimer = setInterval(() => {
+    const online = phoneOnline();
+    if (online !== wasPhoneOnline) { wasPhoneOnline = online; broadcast(); }
+    if (session.connected && Date.now()-lastPhoneSeen>60_000 && sendQueue.active) sendQueue.failActive('Phone disconnected');
+  }, 1000);
+  connectionTimer.unref();
   function fail(response,error) { json(response,error.status||400,{error:error.message,...(error.available?{available:error.available}:{})}); }
   const lan = https.createServer({ key, cert }, async (request,response) => {
     try {
@@ -40,15 +52,27 @@ export async function startReceiver({ host = localAddress(), uiHost = '127.0.0.1
       if(url.pathname==='/api/session/connect' && request.method==='POST') {
         refreshExpiredPairing();
         if(!session.connect(token)){log('pairing rejected','invalid or expired session');return json(response,401,{error:'Invalid or expired session'});}
-        log('device connected');broadcast();return json(response,200,{status:'connected',protocol:1});
+        lastPhoneSeen=Date.now();phoneSupportsSend=request.headers['x-phonehaul-capabilities']?.split(',').map(x=>x.trim()).includes('send-to-phone')||false;log('device connected');broadcast();return json(response,200,{status:'connected',protocol:1,capabilities:['send-to-phone','incremental-transfer']});
       }
       if(!session.connected || !session.valid(token))return json(response,401,{error:'Invalid session'});
-      if(url.pathname==='/api/transfers' && request.method==='POST') {const result=await transfer.create(await body(request));log('transfer started',result.transferId);return json(response,201,result);}
-      const match=/^\/api\/transfers\/([^/]+)(?:\/files\/([^/]+)|\/(finish|cancel))?$/.exec(url.pathname);
+      lastPhoneSeen=Date.now();
+      if(url.pathname==='/api/send/next'&&request.method==='GET'){
+        const item=sendQueue.next(!transfer.transfer || transfer.transfer.finished);
+        return item?json(response,200,{id:item.id,relativePath:item.relativePath,name:item.name,size:item.size,sha256:item.sha256,type:item.type}):json(response,200,{item:null});
+      }
+      const sendMatch=/^\/api\/send\/([a-f0-9-]+)(?:\/(content|complete))?$/.exec(url.pathname);
+      if(sendMatch){
+        const [,id,action]=sendMatch;
+        if(action==='content'&&request.method==='GET')return await sendQueue.stream(id,response);
+        if(action==='complete'&&request.method==='POST'){const result=await body(request);await sendQueue.finish(id,result.state,result.error);return json(response,200,{status:'acknowledged'});}
+      }
+      if(url.pathname==='/api/transfers' && request.method==='POST') {if(sendQueue.active)throw Error('Phone is receiving a file; retry shortly');const result=await transfer.create(await body(request));log('transfer started',result.transferId);return json(response,201,result);}
+      const match=/^\/api\/transfers\/([^/]+)(?:\/files\/([^/]+)|\/(items|finish|cancel))?$/.exec(url.pathname);
       if(!match)return json(response,404,{error:'Not found'});
       const [,id,fileId,action]=match;
       if(request.method==='GET'&&!fileId&&!action) {if(transfer.transfer?.transferId!==id)throw Error('Invalid transfer');return json(response,200,transfer.summary());}
-      if(request.method==='PUT'&&fileId){const result=await transfer.upload(id,fileId,request,request.headers['x-phonehaul-sha256']);log(result.status==='committed'?'file committed':'file skipped',fileId);return json(response,200,result);}
+      if(request.method==='POST'&&action==='items')return json(response,201,await transfer.addItem(id,await body(request)));
+      if(request.method==='PUT'&&fileId){const result=await transfer.upload(id,fileId,request,request.headers['x-phonehaul-sha256']);log(`file ${result.status}`,fileId);return json(response,200,result);}
       if(request.method==='POST'&&action==='finish')return json(response,200,transfer.finish(id));
       if(request.method==='POST'&&action==='cancel')return json(response,200,transfer.cancel(id));
       return json(response,404,{error:'Not found'});
@@ -72,8 +96,14 @@ export async function startReceiver({ host = localAddress(), uiHost = '127.0.0.1
         response.on('close',()=>clients.delete(response));
         return;
       }
-      if(url.pathname==='/api/ui'&&request.method==='GET'){refreshExpiredPairing();const qr=await QRCode.toDataURL(session.uri(host,port,certFingerprint),{margin:2,width:320});return json(response,200,{settings,qr,host,port,pairingVersion,connected:session.connected,transfer:transfer.summary(),partials:await findPartials(settings.destination)});}
-      if(url.pathname==='/api/qr/refresh'&&request.method==='POST'){if(session.connected)throw Error('Session already connected');refreshPairing();return json(response,200,{status:'ready'});}
+      if(url.pathname==='/api/ui'&&request.method==='GET'){refreshExpiredPairing();const qr=await QRCode.toDataURL(session.uri(host,port,certFingerprint),{margin:2,width:320});return json(response,200,{settings,qr,host,port,pairingVersion,connected:phoneOnline(),pairingComplete:session.connected,sendConnected:phoneOnline()&&phoneSupportsSend,transfer:transfer.summary(false),sendQueue:sendQueue.summary(),partials:await findPartials(settings.destination)});}
+      if(url.pathname==='/api/send/items'&&request.method==='POST'){
+        const item=await sendQueue.add(decodeURIComponent(request.headers['x-phonehaul-relative-path']||''),request);
+        return json(response,201,{id:item.id});
+      }
+      const localSend=/^\/api\/send\/items\/([a-f0-9-]+)$/.exec(url.pathname);
+      if(localSend&&request.method==='DELETE'){await sendQueue.remove(localSend[1]);return json(response,200,{status:'cancelled'});}
+      if(url.pathname==='/api/qr/refresh'&&request.method==='POST'){if(phoneOnline())throw Error('Session already connected');sendQueue.failActive('Phone session replaced');refreshPairing();return json(response,200,{status:'ready'});}
       if(url.pathname==='/api/settings'&&request.method==='POST'){if(transfer.transfer&&!transfer.transfer.finished)throw Error('Cannot change destination during transfer');settings=await saveSettings(await body(request),settingsFile);transfer.settings=settings;return json(response,200,settings);}
       if(url.pathname==='/api/partials/remove'&&request.method==='POST'){if(transfer.transfer&&!transfer.transfer.finished)throw Error('Cannot remove partial files during transfer');const partials=await findPartials(settings.destination);for(const file of partials)await unlink(file);return json(response,200,{removed:partials.length});}
       return json(response,404,{error:'Not found'});
@@ -96,11 +126,13 @@ export async function startReceiver({ host = localAddress(), uiHost = '127.0.0.1
     closed=true;
     if(heartbeatMonitor)clearInterval(heartbeatMonitor);
     clearInterval(pairingTimer);
+    clearInterval(connectionTimer);
     if(transfer.transfer&&!transfer.transfer.finished)transfer.cancel(transfer.transfer.transferId);
     session=new PairingSession();
     for(const client of clients)client.end();
     await Promise.all([new Promise(r=>ui.close(r)),new Promise(r=>lan.close(r))]);
+    await sendQueue.close();
   };
   closeReceiver=close;
-  return {uiUrl,host,port,get settings(){return settings},get session(){return session},certFingerprint,transfer,close};
+  return {uiUrl,host,port,get settings(){return settings},get session(){return session},certFingerprint,transfer,sendQueue,close};
 }

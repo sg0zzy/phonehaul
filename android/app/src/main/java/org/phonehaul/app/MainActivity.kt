@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -72,9 +73,16 @@ class MainActivity : ComponentActivity() {
     private var cameraDenied by mutableStateOf(false)
     private var mediaDenied by mutableStateOf(false)
     private var pendingDelete: CompletableDeferred<Boolean>? = null
+    private var pendingTransfer: TransferMode? = null
 
     private val filesPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> model.addDocuments(uris) }
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(model::addTree) }
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        pendingTransfer?.let { mode ->
+            pendingTransfer = null
+            model.startTransfer(mode, ::confirmMediaDeletion)
+        }
+    }
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         cameraDenied = !granted
         if (granted) model.startScan()
@@ -89,7 +97,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { App(model, cameraDenied, mediaDenied, ::requestScan, ::requestMedia, { filesPicker.launch(arrayOf("*/*")) }, { folderPicker.launch(null) }, ::confirmMediaDeletion) } }
+        setContent { MaterialTheme { App(model, cameraDenied, mediaDenied, ::requestScan, ::requestMedia, { filesPicker.launch(arrayOf("*/*")) }, { folderPicker.launch(null) }, ::requestTransfer) } }
+    }
+
+    private fun requestTransfer(mode: TransferMode) {
+        val preferences = getSharedPreferences("phonehaul_ui", MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !preferences.getBoolean("notification_permission_requested", false)) {
+            pendingTransfer = mode
+            preferences.edit().putBoolean("notification_permission_requested", true).apply()
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            model.startTransfer(mode, ::confirmMediaDeletion)
+        }
     }
 
     private fun requestScan() {
@@ -120,7 +141,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun App(vm: PhoneHaulViewModel, cameraDenied: Boolean, mediaDenied: Boolean, requestScan: () -> Unit, requestMedia: () -> Unit, selectFiles: () -> Unit, selectFolder: () -> Unit, confirmDelete: suspend (List<Uri>) -> Boolean) {
+private fun App(vm: PhoneHaulViewModel, cameraDenied: Boolean, mediaDenied: Boolean, requestScan: () -> Unit, requestMedia: () -> Unit, selectFiles: () -> Unit, selectFolder: () -> Unit, startTransfer: (TransferMode) -> Unit) {
     Scaffold(topBar = { TopAppBar(title = { Text("PhoneHaul") }, navigationIcon = { if (vm.screen != Screen.START && vm.screen != Screen.PROGRESS && vm.screen != Screen.COMPLETE) TextButton(onClick = vm::back) { Text("Back") } }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when (vm.screen) {
@@ -140,26 +161,30 @@ private fun App(vm: PhoneHaulViewModel, cameraDenied: Boolean, mediaDenied: Bool
                     Heading("Connected to ${vm.pairing?.label.orEmpty()}")
                     Text("Phone free space: ${formatBytes(vm.freeBytes)}")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = selectFiles) { Text("Select files") }
-                        OutlinedButton(onClick = selectFolder) { Text("Select folder") }
+                        Button(onClick = selectFiles, enabled = !vm.busy) { Text("Select files") }
+                        OutlinedButton(onClick = selectFolder, enabled = !vm.busy) { Text("Select folder") }
                     }
-                    OutlinedButton(onClick = requestMedia) { Text("Photos & videos") }
+                    OutlinedButton(onClick = requestMedia, enabled = !vm.busy) { Text("Photos & videos") }
                     if (mediaDenied) Text("Allow photo and video access to browse media, or use Select files.", color = MaterialTheme.colorScheme.error)
-                    if (vm.busy) Text(vm.status.ifEmpty { "Reading selection…" })
+                    if (vm.busy) Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 3.dp)
+                        Text(vm.status.ifEmpty { "Reading selection…" })
+                    }
                     SelectedSummary(vm)
                     if (vm.selected.isNotEmpty()) {
-                        TextButton(onClick = vm::clearSelection) { Text("Clear selection") }
+                        val selectionGroups = remember(vm.selected) { vm.selected.groupBy { it.relativePath.substringBefore('/') }.toList() }
+                        TextButton(onClick = vm::clearSelection, enabled = !vm.busy) { Text("Clear selection") }
                         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            items(vm.selected.filter { it.isDirectory || vm.selected.none { parent -> parent.isDirectory && it.relativePath.startsWith(parent.relativePath + "/") } }, key = { it.id }) { item ->
+                            items(selectionGroups, key = { it.first }) { (name, files) ->
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(item.relativePath, Modifier.weight(1f))
-                                    TextButton(onClick = { vm.remove(item) }) { Text("Remove") }
+                                    Text(if (files.any { '/' in it.relativePath }) "$name/ (${files.size} files)" else name, Modifier.weight(1f))
+                                    TextButton(onClick = { vm.removeTopLevel(name) }, enabled = !vm.busy) { Text("Remove") }
                                 }
                             }
                         }
                         Button(onClick = vm::review, modifier = Modifier.fillMaxWidth(), enabled = !vm.busy) { Text("Continue") }
                     }
-                    TextButton(onClick = vm::disconnect) { Text("Disconnect") }
+                    TextButton(onClick = vm::disconnect, enabled = !vm.busy) { Text("Disconnect") }
                 }
                 Screen.MEDIA -> {
                     Heading("Photos & videos")
@@ -199,17 +224,18 @@ private fun App(vm: PhoneHaulViewModel, cameraDenied: Boolean, mediaDenied: Bool
                     SelectedSummary(vm)
                     Text("Destination: ${vm.pairing?.label.orEmpty()}")
                     Text("Phone free space: ${formatBytes(vm.freeBytes)}")
+                    Text("Transfers can continue with the screen off. Android may ask to show a transfer notification.")
                     if (!vm.hasUnknownSizes) Text("After MOVE: approximately ${formatBytes(vm.freeBytes + vm.selectedKnownBytes)} free")
-                    Button(onClick = { vm.startTransfer(TransferMode.MOVE, confirmDelete) }, modifier = Modifier.fillMaxWidth(), enabled = vm.canMove) { Text("MOVE — Free space") }
+                    Button(onClick = { startTransfer(TransferMode.MOVE) }, modifier = Modifier.fillMaxWidth(), enabled = vm.canMove) { Text("MOVE — Free space") }
                     Text("Delete each source only after the receiver commits it. Photos and videos may need Android confirmation.")
                     if (!vm.canMove) Text("Some selected files cannot be deleted by Android. Choose COPY or remove those files.", color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = { vm.startTransfer(TransferMode.COPY, confirmDelete) }, modifier = Modifier.fillMaxWidth()) { Text("COPY — Keep originals") }
+                    OutlinedButton(onClick = { startTransfer(TransferMode.COPY) }, modifier = Modifier.fillMaxWidth()) { Text("COPY — Keep originals") }
                 }
                 Screen.PROGRESS -> {
                     Heading(vm.status)
-                    Text("${vm.committedCount} of ${vm.fileCount} files committed")
-                    LinearProgressIndicator(progress = { if (vm.totalBytes > 0) (vm.sentBytes.toFloat() / vm.totalBytes).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth())
-                    Text("${formatBytes(vm.sentBytes)} / ${formatBytes(vm.totalBytes)}")
+                    Text("${vm.processedCount} of ${vm.fileCount} files processed · ${vm.committedCount} new copies")
+                    LinearProgressIndicator(progress = { if (vm.fileCount > 0) ((vm.processedCount + vm.currentFileProgress) / vm.fileCount).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth())
+                    Text("${formatBytes(vm.sentBytes)} sent · ${formatBytes(vm.totalBytes)} selected")
                     Text("${formatBytes(vm.bytesPerSecond)}/s · ${((System.currentTimeMillis() - vm.startedAt) / 1000).coerceAtLeast(0)} s")
                     if (vm.currentFile.isNotEmpty()) Text("Current: ${vm.currentFile}")
                     if (vm.movedCount > 0) Text("${formatBytes(vm.freedBytes)} freed so far")

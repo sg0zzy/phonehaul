@@ -12,10 +12,10 @@ export function validateManifest(input) {
     if (paths.has(relativePathValue)) throw new Error('Duplicate destination path');
     ids.add(item.id); paths.add(relativePathValue);
     if (item.type === 'directory') return { id: item.id, type: 'directory', relativePath: relativePathValue };
-    if (!Number.isSafeInteger(item.size) || item.size < 0 || typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256)) throw new Error('Invalid file size or SHA-256');
+    if (!Number.isSafeInteger(item.size) || item.size < 0 || item.sha256 != null && (typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256))) throw new Error('Invalid file size or SHA-256');
     totalBytes += item.size;
     if (!Number.isSafeInteger(totalBytes)) throw new Error('Transfer too large');
-    return { id: item.id, type: 'file', relativePath: relativePathValue, size: item.size, sha256: item.sha256.toLowerCase(), modified: Number.isSafeInteger(item.modified) ? item.modified : null };
+    return { id: item.id, type: 'file', relativePath: relativePathValue, size: item.size, sha256: item.sha256?.toLowerCase() ?? null, modified: Number.isSafeInteger(item.modified) ? item.modified : null };
   });
   return { protocol: 1, operation: input.operation, transferId: randomUUID(), items, totalBytes };
 }

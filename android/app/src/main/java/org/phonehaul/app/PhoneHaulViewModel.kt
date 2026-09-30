@@ -1,6 +1,7 @@
 package org.phonehaul.app
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import android.os.StatFs
 import android.provider.DocumentsContract
@@ -53,6 +54,10 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
         private set
     var committedCount by androidx.compose.runtime.mutableIntStateOf(0)
         private set
+    var processedCount by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var currentFileProgress by androidx.compose.runtime.mutableFloatStateOf(0f)
+        private set
     var movedCount by androidx.compose.runtime.mutableIntStateOf(0)
         private set
     var freedBytes by androidx.compose.runtime.mutableLongStateOf(0L)
@@ -73,10 +78,12 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
     private var client: ReceiverClient? = null
     private var transferId: String? = null
     private var transferJob: Job? = null
+    private var inboxJob: Job? = null
+    private var transferServiceStarted = false
     private val transitions = mutableMapOf<String, FileTransition>()
 
     val fileCount get() = selected.count { !it.isDirectory }
-    val folderCount get() = selected.count { it.isDirectory }
+    val folderCount get() = selected.mapNotNull { it.relativePath.substringBefore('/', "").takeIf(String::isNotEmpty) }.distinct().size
     val selectedKnownBytes get() = selected.filterNot { it.isDirectory }.sumOf { it.size ?: 0L }
     val hasUnknownSizes get() = selected.any { !it.isDirectory && it.size == null }
     val canMove get() = Selection.canMove(selected)
@@ -93,8 +100,29 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 val candidate = ReceiverClient(getApplication<Application>().contentResolver, parsed)
-                withContext(Dispatchers.IO) { candidate.connect() }
+                val supportsInbox = withContext(Dispatchers.IO) { candidate.connect() }
                 client = candidate; pairing = parsed; selected = emptyList(); screen = Screen.SELECT
+                inboxJob?.cancel()
+                if (supportsInbox) inboxJob = viewModelScope.launch {
+                    while (true) {
+                        if (!busy) {
+                            try {
+                                val incoming = withContext(Dispatchers.IO) { candidate.nextIncoming() }
+                                if (incoming != null) {
+                                    try {
+                                        withContext(Dispatchers.IO) { candidate.receiveIncoming(incoming) }
+                                        withContext(Dispatchers.IO) { candidate.acknowledgeIncoming(incoming.id, "completed") }
+                                        error = null
+                                    } catch (e: Exception) {
+                                        error = "Could not receive ${incoming.relativePath}: ${e.message ?: "Unknown error"}"
+                                        runCatching { withContext(Dispatchers.IO) { candidate.acknowledgeIncoming(incoming.id, "failed", e.message) } }
+                                    }
+                                }
+                            } catch (_: Exception) { /* Retry polling after network interruption. */ }
+                        }
+                        kotlinx.coroutines.delay(1000)
+                    }
+                }
             } catch (e: Exception) {
                 error = when (e) {
                     is ReceiverHttpException -> if (e.statusCode == 401) "Pairing QR expired or was replaced. Scan the current QR on the computer." else "Receiver rejected connection: ${e.message}"
@@ -110,7 +138,7 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun addDocuments(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        busy = true; error = null
+        busy = true; error = null; status = "Reading selected files…"
         viewModelScope.launch {
             try { selected = selected + withContext(Dispatchers.IO) { Selection.addDocuments(getApplication(), uris, selected) } }
             catch (e: Exception) { error = e.message }
@@ -119,7 +147,7 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun addTree(uri: Uri) {
-        busy = true; error = null; status = "Reading folder…"
+        busy = true; error = null; status = "Counting files in selected folder…"
         viewModelScope.launch {
             try { selected = selected + withContext(Dispatchers.IO) { Selection.addTree(getApplication(), uri, selected) } }
             catch (e: Exception) { error = e.message }
@@ -127,7 +155,7 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun remove(item: SourceItem) { selected = selected.filterNot { it.id == item.id || it.relativePath.startsWith(item.relativePath + "/") } }
+    fun removeTopLevel(name: String) { selected = selected.filterNot { it.relativePath.substringBefore('/') == name } }
     fun clearSelection() { selected = emptyList() }
     fun review() { if (selected.isNotEmpty()) { error = null; screen = Screen.REVIEW } }
 
@@ -165,8 +193,16 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
     fun startTransfer(mode: TransferMode, confirmMediaDelete: suspend (List<Uri>) -> Boolean) {
         if (selected.isEmpty() || busy || mode == TransferMode.MOVE && !canMove) return
         val receiver = client ?: return
+        val application = getApplication<Application>()
+        try {
+            application.startForegroundService(Intent(application, TransferService::class.java))
+            transferServiceStarted = true
+        } catch (e: Exception) {
+            error = "Could not start background transfer: ${e.message ?: "Unknown error"}"
+            return
+        }
         busy = true; allowCancel = true; error = null; screen = Screen.PROGRESS; status = "Checking selected files…"; currentFile = ""
-        totalBytes = 0; sentBytes = 0; bytesPerSecond = 0; committedCount = 0; movedCount = 0; freedBytes = 0; skippedCount = 0; identicalCount = 0; deleteFailedCount = 0; cancelled = false; startedAt = System.currentTimeMillis()
+        totalBytes = selectedKnownBytes; sentBytes = 0; bytesPerSecond = 0; committedCount = 0; processedCount = 0; currentFileProgress = 0f; movedCount = 0; freedBytes = 0; skippedCount = 0; identicalCount = 0; deleteFailedCount = 0; cancelled = false; startedAt = System.currentTimeMillis()
         transitions.clear()
         val batch = selected.toList()
         val uploaded = AtomicLong(0)
@@ -174,24 +210,25 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
         var sampleBytes = 0L
         transferJob = viewModelScope.launch {
             try {
-                val prepared = withContext(Dispatchers.IO) {
-                    batch.filterNot { it.isDirectory }.associate { item ->
-                        val (size, digest) = receiver.hashAndSize(item.uri)
-                        item.id to PreparedFile(item, size, digest)
-                    }
-                }
-                status = "Preparing transfer…"
-                val plan = withContext(Dispatchers.IO) { receiver.createTransfer(batch, prepared, mode) }
-                val id = plan.transferId
-                transferId = id
-                totalBytes = prepared.values.filter { plan.dispositions[it.source.id] == "queued" }.sumOf { it.size }
-                val mediaCommitted = mutableListOf<SourceItem>()
-                for (item in batch.filterNot { it.isDirectory }) {
-                    val file = prepared.getValue(item.id)
+                val files = batch.filterNot { it.isDirectory }
+                val mediaCommitted = mutableListOf<PreparedFile>()
+                for ((index, item) in files.withIndex()) {
                     currentFile = item.relativePath
+                    status = "Starting file ${index + 1} of ${files.size}…"
+                    val file = if (item.size != null) PreparedFile(item, item.size, null) else {
+                        status = "Checking size of file ${index + 1} of ${files.size}…"
+                        val (size, digest) = withContext(Dispatchers.IO) { receiver.hashAndSize(item.uri) }
+                        PreparedFile(item, size, digest)
+                    }
+                    if (item.size == null) totalBytes += file.size
+                    val disposition = if (transferId == null) {
+                        val plan = withContext(Dispatchers.IO) { receiver.createTransfer(listOf(item), mapOf(item.id to file), mode) }
+                        transferId = plan.transferId
+                        plan.dispositions[item.id]
+                    } else withContext(Dispatchers.IO) { receiver.appendFile(transferId!!, file) }
                     val state = FileTransition()
                     transitions[item.id] = state
-                    when (plan.dispositions[item.id]) {
+                    when (disposition) {
                         "already_present" -> {
                             state.to(FileState.ALREADY_PRESENT)
                             identicalCount++
@@ -199,14 +236,18 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
                         "skipped" -> {
                             state.to(FileState.SKIPPED)
                             skippedCount++
+                            processedCount++
                             continue
                         }
                         "queued" -> {
                             state.to(FileState.QUEUED)
                             state.to(FileState.SENDING)
-                            status = "Sending files…"
+                            status = "Sending file ${index + 1} of ${files.size}…"
+                            var fileSent = 0L
                             val result = try {
-                                withContext(Dispatchers.IO) { receiver.upload(id, file) { n ->
+                                withContext(Dispatchers.IO) { receiver.upload(transferId!!, file) { n ->
+                                    fileSent += n
+                                    if (file.size > 0L) currentFileProgress = (fileSent.toFloat() / file.size.toFloat()).coerceIn(0f, 1f)
                                     val total = uploaded.addAndGet(n)
                                     sentBytes = total
                                     val now = System.nanoTime()
@@ -216,18 +257,21 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
                                     }
                                 } }
                             } catch (e: Exception) { state.to(FileState.TRANSFER_FAILED); throw e }
-                            if (result.status == "skipped") { state.to(FileState.SKIPPED); skippedCount++; continue }
-                            state.to(FileState.SENT); state.to(FileState.VERIFYING); state.to(FileState.COMMITTED)
-                            committedCount++
+                            if (result.status == "skipped") { state.to(FileState.SKIPPED); skippedCount++; processedCount++; currentFileProgress = 0f; continue }
+                            state.to(FileState.SENT); state.to(FileState.VERIFYING)
+                            if (result.status == "already_present") { state.to(FileState.ALREADY_PRESENT); identicalCount++ }
+                            else { state.to(FileState.COMMITTED); committedCount++ }
                         }
                         else -> throw IllegalStateException("Receiver returned no file disposition")
                     }
+                    processedCount++
+                    currentFileProgress = 0f
                     if (mode == TransferMode.COPY) {
                         if (state.state == FileState.ALREADY_PRESENT || state.state == FileState.COMMITTED) state.to(FileState.COPIED)
                         continue
                     }
                     if (item.deleteCapability == DeleteCapability.CONFIRMATION) {
-                        mediaCommitted += item
+                        mediaCommitted += file
                         continue
                     }
                     state.to(FileState.DELETING_SOURCE)
@@ -235,17 +279,18 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
                     if (deleted) { state.to(FileState.MOVED); movedCount++; freedBytes += file.size }
                     else { state.to(FileState.DELETE_FAILED); deleteFailedCount++ }
                 }
-                withContext(Dispatchers.IO) { receiver.finish(id) }
+                transferId?.let { id -> withContext(Dispatchers.IO) { receiver.finish(id) } }
                 transferId = null
                 allowCancel = false
                 if (mode == TransferMode.MOVE && mediaCommitted.isNotEmpty()) {
                     status = "Confirm deletion on phone…"
                     for (group in mediaCommitted.chunked(200)) {
-                        val approved = confirmMediaDelete(group.map { it.uri })
-                        for (item in group) {
+                        val approved = confirmMediaDelete(group.map { it.source.uri })
+                        for (file in group) {
+                            val item = file.source
                             val state = transitions.getValue(item.id)
                             if (state.state == FileState.COMMITTED || state.state == FileState.ALREADY_PRESENT) state.to(FileState.DELETING_SOURCE)
-                            if (approved) { state.to(FileState.MOVED); movedCount++; freedBytes += prepared.getValue(item.id).size }
+                            if (approved) { state.to(FileState.MOVED); movedCount++; freedBytes += file.size }
                             else { state.to(FileState.DELETE_FAILED); deleteFailedCount++ }
                         }
                     }
@@ -259,8 +304,17 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
                 status = "Transfer stopped; uncommitted files remain on phone"
                 screen = Screen.COMPLETE
                 transferId?.let { id -> runCatching { withContext(Dispatchers.IO) { receiver.cancel(id) } } }
-            } finally { busy = false; allowCancel = false; currentFile = ""; transferId = null }
+            } finally {
+                busy = false; allowCancel = false; currentFile = ""; transferId = null
+                application.stopService(Intent(application, TransferService::class.java))
+                transferServiceStarted = false
+            }
         }
+    }
+
+    override fun onCleared() {
+        if (transferServiceStarted) getApplication<Application>().stopService(Intent(getApplication(), TransferService::class.java))
+        super.onCleared()
     }
 
     fun cancelTransfer() {
@@ -272,5 +326,5 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun newBatch() { if (!busy) { selected = emptyList(); screen = Screen.SELECT; error = null } }
-    fun disconnect() { if (!busy) { client = null; pairing = null; selected = emptyList(); screen = Screen.START } }
+    fun disconnect() { if (!busy) { inboxJob?.cancel(); inboxJob = null; client = null; pairing = null; selected = emptyList(); screen = Screen.START } }
 }

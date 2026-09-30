@@ -24,4 +24,10 @@ class TransferStateTest {
         assertThrows(IllegalArgumentException::class.java) { file.to(FileState.DELETING_SOURCE) }
     }
 
+    @Test fun streamedDuplicateCanBeMovedAfterVerification() {
+        val file = FileTransition()
+        listOf(FileState.QUEUED, FileState.SENDING, FileState.SENT, FileState.VERIFYING, FileState.ALREADY_PRESENT, FileState.DELETING_SOURCE, FileState.MOVED).forEach(file::to)
+        assertEquals(FileState.MOVED, file.state)
+    }
+
 }

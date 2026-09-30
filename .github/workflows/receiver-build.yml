@@ -66,6 +66,7 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
           chmod 600 "$keystore"
           key_check="$RUNNER_TEMP/phonehaul-signing-check.p12"
+          key_check_log="$RUNNER_TEMP/phonehaul-signing-check.log"
           if ! keytool -importkeystore \
             -srckeystore "$keystore" \
             -srcstorepass:env ANDROID_STORE_PASSWORD \
@@ -75,11 +76,12 @@ jobs:
             -deststoretype PKCS12 \
             -deststorepass:env ANDROID_STORE_PASSWORD \
             -destkeypass:env ANDROID_STORE_PASSWORD \
-            -noprompt >/dev/null 2>&1; then
+            -noprompt >"$key_check_log" 2>&1; then
+            cat "$key_check_log"
             echo "Android signing check failed: verify the keystore file, alias, store password, and key password secrets."
             exit 1
           fi
-          rm -f "$key_check"
+          rm -f "$key_check" "$key_check_log"
           echo "ANDROID_KEYSTORE_FILE=$keystore" >> "$GITHUB_ENV"
       - name: Build signed APK and Play bundle
         working-directory: android
@@ -162,4 +164,69 @@ jobs:
           path: |
             dist/phonehaul-${{ matrix.platform }}-${{ matrix.arch }}*
             dist/PhoneHaul-*.AppImage
+          if-no-files-found: error
+
+  desktop:
+    name: Tauri desktop (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-24.04
+            bundles: appimage,deb
+            artifact-path: |
+              desktop/src-tauri/target/release/bundle/appimage/*
+              desktop/src-tauri/target/release/bundle/deb/*
+          - platform: windows
+            runner: windows-2025
+            bundles: nsis
+            artifact-path: desktop/src-tauri/target/release/bundle/nsis/*
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            receiver/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux Tauri dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential curl wget file libssl-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libldap2-dev libfuse2 patchelf
+      - name: Install NSIS
+        if: matrix.platform == 'windows'
+        run: |
+          choco install nsis --yes --no-progress
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          if (!(Test-Path $nsis)) { throw "NSIS installation not found at $nsis" }
+          Add-Content $env:GITHUB_PATH $nsis
+      - name: Install receiver dependencies
+        if: matrix.platform == 'linux'
+        run: npm ci --prefix receiver
+      - name: Install desktop dependencies
+        if: matrix.platform == 'linux'
+        run: npm ci --prefix desktop
+      - name: Build Linux Tauri bundles
+        if: matrix.platform == 'linux'
+        run: npm run build -- --bundles ${{ matrix.bundles }}
+        working-directory: desktop
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+      - name: Build Windows Tauri installer
+        if: matrix.platform == 'windows'
+        run: bash scripts/build-desktop-windows.sh
+        shell: bash
+      - uses: actions/upload-artifact@v6
+        with:
+          name: phonehaul-desktop-${{ matrix.platform }}
+          path: ${{ matrix.artifact-path }}
           if-no-files-found: error
