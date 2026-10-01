@@ -27,4 +27,13 @@ class PhoneInboxPathTest {
         assertEquals("report.pdf", PhoneInboxPath.chooseName("report.pdf") { false })
         assertEquals("spec (1).pdf", PhoneInboxPath.chooseName(PhoneInboxPath.name("Other/spec.pdf")) { it == PhoneInboxPath.name("Project/docs/spec.pdf") })
     }
+
+    @Test fun imageNamesHaveMediaMimeTypes() {
+        assertEquals("image/jpeg", PhoneInboxPath.imageMimeType("photo.JPG"))
+        assertEquals("image/jpeg", PhoneInboxPath.imageMimeType("photo (1).jpeg"))
+        assertEquals("image/png", PhoneInboxPath.imageMimeType("screenshot.png"))
+        assertEquals("image/webp", PhoneInboxPath.imageMimeType("image.webp"))
+        assertEquals("image/heic", PhoneInboxPath.imageMimeType("camera.HEIC"))
+        assertEquals(null, PhoneInboxPath.imageMimeType("archive.zip"))
+    }
 }

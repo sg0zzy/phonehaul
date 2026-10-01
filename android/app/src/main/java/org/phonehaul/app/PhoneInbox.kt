@@ -4,9 +4,11 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.net.Uri
 import android.provider.MediaStore
+import android.webkit.MimeTypeMap
 import java.io.InputStream
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.Locale
 
 data class IncomingFile(val id: String, val relativePath: String, val size: Long, val sha256: String)
 
@@ -26,6 +28,18 @@ object PhoneInboxPath {
         return ROOT
     }
     fun name(relative: String): String = parts(relative).last()
+
+    fun imageMimeType(name: String): String? = when (name.substringAfterLast('.', "").lowercase(Locale.ROOT)) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "heic" -> "image/heic"
+        "heif" -> "image/heif"
+        "avif" -> "image/avif"
+        "bmp" -> "image/bmp"
+        else -> null
+    }
 
     fun renamed(name: String, n: Int): String {
         val dot = name.lastIndexOf('.')
@@ -57,10 +71,14 @@ class PhoneInbox(private val resolver: ContentResolver) {
         val directory = PhoneInboxPath.directory(file.relativePath)
         val original = PhoneInboxPath.name(file.relativePath)
         val name = PhoneInboxPath.chooseName(original) { exists(directory, it) }
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val mimeType = PhoneInboxPath.imageMimeType(name)
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            ?: "application/octet-stream"
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
             put(MediaStore.Downloads.RELATIVE_PATH, directory)
-            put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.Downloads.MIME_TYPE, mimeType)
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri: Uri = resolver.insert(collection, values) ?: throw IOException("Cannot create Downloads file")

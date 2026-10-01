@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { Readable, PassThrough } from 'node:stream';
 import { SendQueue } from '../src/transfer/send-queue.js';
 
@@ -54,6 +55,25 @@ test('waits for a staged file before dispatching later entries', async () => {
     await download(queue,a);
     await queue.finish(a.id, 'completed');
     assert.equal(queue.next().id, second.id);
+  } finally { await queue.close(); }
+});
+
+test('preserves image bytes while staging and streaming to the phone', async () => {
+  const queue = new SendQueue();
+  const image = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0x80, 0x01]);
+  const request = Readable.from([image.subarray(0, 5), image.subarray(5)]);
+  request.headers = { 'content-length': image.length };
+  try {
+    const item = await queue.add('photo.png', request);
+    assert.equal(item.sha256, createHash('sha256').update(image).digest('hex'));
+    assert.equal(queue.next().id, item.id);
+    const response = new PassThrough();
+    response.writeHead = () => {};
+    const chunks = [];
+    response.on('data', chunk => chunks.push(chunk));
+    await queue.stream(item.id, response);
+    assert.deepEqual(Buffer.concat(chunks), image);
+    await queue.finish(item.id, 'completed');
   } finally { await queue.close(); }
 });
 
