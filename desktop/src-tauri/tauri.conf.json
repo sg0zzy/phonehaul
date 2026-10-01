@@ -10,7 +10,7 @@
     "frontendDist": "../frontend-dist"
   },
   "app": {
-    "windows": [{ "title": "PhoneHaul", "width": 820, "height": 720, "minWidth": 600, "minHeight": 500 }],
+    "windows": [{ "title": "PhoneHaul", "width": 580, "height": 750, "minWidth": 420, "minHeight": 520, "center": true }],
     "security": { "csp": "default-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
   },
   "bundle": {

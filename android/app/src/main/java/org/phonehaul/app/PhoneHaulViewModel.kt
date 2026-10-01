@@ -104,10 +104,12 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
                 client = candidate; pairing = parsed; selected = emptyList(); screen = Screen.SELECT
                 inboxJob?.cancel()
                 if (supportsInbox) inboxJob = viewModelScope.launch {
+                    var consecutivePollFailures = 0
                     while (true) {
                         if (!busy) {
                             try {
                                 val incoming = withContext(Dispatchers.IO) { candidate.nextIncoming() }
+                                consecutivePollFailures = 0
                                 if (incoming != null) {
                                     try {
                                         withContext(Dispatchers.IO) { candidate.receiveIncoming(incoming) }
@@ -118,7 +120,21 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
                                         runCatching { withContext(Dispatchers.IO) { candidate.acknowledgeIncoming(incoming.id, "failed", e.message) } }
                                     }
                                 }
-                            } catch (_: Exception) { /* Retry polling after network interruption. */ }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                                if (!busy && client === candidate && ++consecutivePollFailures >= 3) {
+                                    client = null
+                                    pairing = null
+                                    selected = emptyList()
+                                    inboxJob = null
+                                    error = "Connection to the computer was lost. Scan its QR code again."
+                                    screen = Screen.SCAN
+                                    return@launch
+                                }
+                            }
+                        } else {
+                            consecutivePollFailures = 0
                         }
                         kotlinx.coroutines.delay(1000)
                     }

@@ -3,6 +3,8 @@
 use reqwest::{header, Body, Client};
 use serde::Serialize;
 use serde_json::{json, Value};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::{
     io::{BufRead, BufReader},
     path::PathBuf,
@@ -100,12 +102,22 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
             bin.display()
         ));
     }
-    let mut child = Command::new(&bin)
+    let mut command = Command::new(&bin);
+    command
         .env("PHONEHAUL_DESKTOP_MANAGED", "1")
         .env("PHONEHAUL_NO_BROWSER", "1")
         .env("PHONEHAUL_TRANSFER_PORT", "0")
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    #[cfg(target_os = "windows")]
+    {
+        // The Node SEA is a console executable. Keep its console hidden when
+        // launched from the Tauri window and silence its experimental SEA warning.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+        command.env("NODE_NO_WARNINGS", "1");
+    }
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Could not start server: {e}"))?;
     let stdout = child.stdout.take().ok_or("Could not read server startup")?;
@@ -452,6 +464,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
+                // Start with the compact default once for existing installations,
+                // then continue remembering any size the user chooses afterward.
+                .with_filename("window-state-compact.json")
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::SIZE
                         | tauri_plugin_window_state::StateFlags::POSITION

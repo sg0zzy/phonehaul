@@ -1,1 +1,59 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PhoneHaul</title><link rel="stylesheet" href="src/style.css"></head><body><main><header><h1>PhoneHaul</h1><span id="server" class="pill">Starting…</span></header><section><h2>Receiver</h2><p id="address">Starting PhoneHaul server…</p><p>Receive destination: <code id="destination">Loading…</code> <button id="change-destination">Change</button></p><p id="device">No phone connected</p></section><section id="pairing"><h2>Connect Android</h2><p id="pairing-copy">Open PhoneHaul on your Android phone and scan this code.</p><img id="qr" alt="PhoneHaul pairing QR code"><p id="pairing-expiry" class="muted">The code refreshes automatically every five minutes until a phone connects.</p><button id="refresh-qr" class="secondary">New QR code</button></section><section><h2>Send to Android</h2><p>Queue files for the paired phone to download.</p><div id="drop-area" role="button" tabindex="0" aria-label="Drop files or folders onto the PhoneHaul window"><strong>Drop files or folders here</strong><span>or click to select files</span></div><button id="send">Select files and send</button><ul id="queue"></ul></section><section><h2>Current transfer</h2><p id="transfer">Idle</p><progress id="progress" max="1" value="0"></progress><p id="message" role="status"></p></section></main><script type="module" src="src/main.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PhoneHaul</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>PhoneHaul</h1>
+      <span id="server" class="pill">Starting…</span>
+    </header>
+    <section>
+      <h2>Receiver</h2>
+      <p id="address" class="muted">Starting PhoneHaul server…</p>
+      <div class="destination-row">
+        <div class="destination-copy">
+          <span class="muted">Receive destination</span>
+          <code id="destination">Loading…</code>
+        </div>
+        <button id="change-destination" class="secondary">Change</button>
+      </div>
+      <p id="device" class="device-status">No phone connected</p>
+    </section>
+    <section id="pairing">
+      <h2>Connect Android</h2>
+      <div class="pairing-content">
+        <img id="qr" alt="PhoneHaul pairing QR code">
+        <div class="pairing-instructions">
+          <p id="pairing-copy">Open PhoneHaul on your Android phone and scan this code.</p>
+          <p id="pairing-expiry" class="muted">The code refreshes automatically every five minutes until a phone connects.</p>
+          <button id="refresh-qr" class="secondary">New QR code</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Send to Android</h2>
+      <p class="muted">Queue files for the paired phone to download.</p>
+      <div class="send-actions">
+        <div id="drop-area" role="button" tabindex="0" aria-label="Drop files or folders onto the PhoneHaul window">
+          <strong>Drop files or folders here</strong>
+          <span>or click to select files</span>
+        </div>
+        <button id="send">Select files and send</button>
+      </div>
+      <ul id="queue"></ul>
+    </section>
+    <section>
+      <h2>Current transfer</h2>
+      <p id="transfer">Idle</p>
+      <progress id="progress" max="1" value="0"></progress>
+      <p id="message" role="status"></p>
+    </section>
+  </main>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
