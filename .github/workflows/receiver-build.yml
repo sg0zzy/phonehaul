@@ -177,6 +177,27 @@ jobs:
         if: matrix.platform == 'windows'
         run: bash scripts/build-desktop-windows.sh
         shell: bash
+      - name: Check Windows Store package identity
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+        run: |
+          if ([bool]$env:MSIX_IDENTITY_NAME -xor [bool]$env:MSIX_PUBLISHER) {
+            throw 'Set both MSIX_IDENTITY_NAME and MSIX_PUBLISHER repository variables.'
+          }
+          if (-not $env:MSIX_IDENTITY_NAME) {
+            Write-Host 'MSIX build skipped until Partner Center identity variables are configured.'
+          }
+      - name: Build unsigned Windows Store MSIX
+        if: matrix.platform == 'windows' && vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != ''
+        run: npm --prefix desktop run package:msix
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+          MSIX_VERSION: ${{ vars.MSIX_VERSION }}
       - name: Build macOS Tauri disk image
         if: startsWith(matrix.platform, 'macos-')
         run: bash scripts/build-desktop-macos.sh
@@ -186,5 +207,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-path }}
+          path: |
+            ${{ matrix.artifact-path }}
+            dist/msix/*.msix
           if-no-files-found: error

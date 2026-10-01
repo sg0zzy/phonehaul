@@ -157,6 +157,17 @@ bash scripts/build-desktop-windows.sh
 
 The script installs the locked Node dependencies, builds the Windows receiver sidecar and Tauri NSIS installer, then prints the installer path under `desktop/src-tauri/target/release/bundle/nsis/`. The installer is currently unsigned. GitHub Actions uses the same script and uploads the NSIS installer as the `phonehaul-desktop-windows` workflow artifact.
 
+### Microsoft Store MSIX
+
+The Windows GitHub Actions job can also package the built Tauri app and receiver sidecar as an **unsigned MSIX** for Microsoft Store submission. Set these repository **Actions variables** to the exact values shown under **App identity** in Partner Center:
+
+- `MSIX_IDENTITY_NAME`: Package/Identity/Name.
+- `MSIX_PUBLISHER`: Package/Identity/Publisher, including the full `CN=...` distinguished name.
+- `MSIX_PUBLISHER_DISPLAY_NAME`: Your publisher display name (optional; defaults to `PhoneHaul`).
+- `MSIX_VERSION`: Four-part Store package version (optional; defaults to `1.0.0.0`). Increase it for every Store update; the last part must remain `0`.
+
+When the first two variables are set, the `phonehaul-desktop-windows` artifact also contains `PhoneHaul_<version>_x64.msix`. Upload that MSIX in Partner Center. Microsoft signs MSIX packages submitted through the Store; the NSIS `.exe` is a separate, unsigned installer and does not receive Store signing. To build locally on Windows after `bash scripts/build-desktop-windows.sh`, set the same environment variables and run `npm --prefix desktop run package:msix`. The MSIX goes to `dist/msix/`.
+
 ## macOS build
 
 On an Intel or Apple Silicon Mac, install Node.js 24, Xcode Command Line Tools, and the Rust stable toolchain. Run from the repository root:
