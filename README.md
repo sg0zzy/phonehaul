@@ -25,7 +25,7 @@ chmod +x PhoneHaul-x86_64.AppImage
 
 The receiver binds the management page to `127.0.0.1`, while its HTTPS transfer listener remains reachable at the selected private LAN address. The AppImage browser page sends a heartbeat every 5 seconds; if no heartbeat arrives for 15 seconds, the receiver shuts down. The executable stores settings in the normal per-user configuration directory and does not write mutable data beside itself. No administrator/root privileges are required.
 
-Current local builds produce a standalone host executable. Linux can also wrap it in an AppImage. Windows Setup and macOS DMG installers are future distribution work; unsigned public Windows/macOS downloads can trigger operating-system warnings, and public releases should be signed/notarized.
+Current local builds produce a standalone host executable. Linux can also wrap it in an AppImage. The Tauri desktop build produces a Windows installer or macOS DMG on the matching host OS. These builds are not signed for public distribution; public releases should be signed and macOS releases notarized.
 
 ### Run from source
 
@@ -54,7 +54,7 @@ npm run package:appimage  # Linux AppImage (also creates the SEA executable)
 npm test
 ```
 
-SEA outputs go in `dist/` (for example, `dist/phonehaul-linux-x64`). `package:sea` packages only for the current host; build each release target on its matching OS and CPU. The Linux AppImage command also requires `appimagetool` on `PATH` or an `APPIMAGETOOL` path. If it cannot download its runtime automatically, download the matching `runtime-x86_64` or `runtime-aarch64` from [AppImage type2-runtime releases](https://github.com/AppImage/type2-runtime/releases) and set `APPIMAGE_RUNTIME` to that file. CI builds Linux x64/arm64 AppImages and SEA executables, macOS x64/arm64 SEA executables, and an Android debug APK with unit tests. The separate desktop job builds a Windows Tauri installer; standalone Windows SEA jobs are temporarily commented out while the Tauri packaging path is being tested. macOS x64 SEA support is experimental in Node.js, so that matrix leg is best-effort.
+SEA outputs go in `dist/` (for example, `dist/phonehaul-linux-x64`). `package:sea` packages only for the current host; build each release target on its matching OS and CPU. The Linux AppImage command also requires `appimagetool` on `PATH` or an `APPIMAGETOOL` path. If it cannot download its runtime automatically, download the matching `runtime-x86_64` or `runtime-aarch64` from [AppImage type2-runtime releases](https://github.com/AppImage/type2-runtime/releases) and set `APPIMAGE_RUNTIME` to that file. CI builds Linux x64/arm64 AppImages and SEA executables, macOS x64/arm64 SEA executables, macOS x64/arm64 Tauri DMGs, a Windows Tauri installer, and an Android debug APK with unit tests. Standalone Windows SEA jobs are temporarily commented out while the Tauri packaging path is being tested. macOS x64 SEA support is experimental in Node.js, so the x64 macOS jobs are best-effort.
 
 To build the Windows `.exe` locally, use a Windows machine (the SEA package embeds that machine's Node executable). Install Node.js 24 LTS and Git; no .NET or Android SDK is needed for the desktop receiver. In PowerShell, from the repository root, run:
 
@@ -115,14 +115,14 @@ In GitHub, open **Actions → Android signed release → Run workflow** to build
 
 ## Status
 
-Implemented: local UI, QR sessions, ephemeral HTTPS certificate with QR fingerprint, streaming single-file uploads, manifest and path checks, disk preflight, conflict policies, partial files, SHA-256 verification, atomic file commit, cancellation endpoint, local progress events, persistent destination settings, and a native Android app with QR scanning, SAF and media selection, COPY, and per-file MOVE deletion. Computer → Android sending uses an ordered queue and Android MediaStore Downloads. Repeated phone → computer transfers merge into existing directories. Identical phone → computer files are detected by SHA-256 and skipped; different same-name files use the selected computer conflict policy. MOVE leaves source folders in place. Desktop SEA and Linux/Windows Tauri build scripts and CI are in place.
+Implemented: local UI, QR sessions, ephemeral HTTPS certificate with QR fingerprint, streaming single-file uploads, manifest and path checks, disk preflight, conflict policies, partial files, SHA-256 verification, atomic file commit, cancellation endpoint, local progress events, persistent destination settings, and a native Android app with QR scanning, SAF and media selection, COPY, and per-file MOVE deletion. Computer → Android sending uses an ordered queue and Android MediaStore Downloads. Repeated phone → computer transfers merge into existing directories. Identical phone → computer files are detected by SHA-256 and skipped; different same-name files use the selected computer conflict policy. MOVE leaves source folders in place. Desktop SEA and Linux/Windows/macOS Tauri build scripts and CI are in place.
 
-Pending: macOS packaging, public code signing/notarization, and device-level testing across Android storage providers. Android 11+ SAF restrictions still apply; some folders and provider-backed files cannot be selected or deleted. The app reports files that could not be deleted after transfer.
+Pending: public code signing/notarization, and device-level testing across Android storage providers. Android 11+ SAF restrictions still apply; some folders and provider-backed files cannot be selected or deleted. The app reports files that could not be deleted after transfer.
 
 See [protocol](docs/protocol.md), [security](docs/security.md), and [architecture](docs/architecture.md).
 # Desktop / Tauri development
 
-The desktop app lives in `desktop/` and currently builds for Linux and Windows. It wraps the existing PhoneHaul Node receiver as a bundled sidecar; the transfer protocol, pairing, receive pipeline, disk-backed send queue, and configuration remain in `receiver/`. Rust supervises the sidecar, streams selected files into its existing send API, and forwards its SSE status updates to the small frontend. Linux uses XDG settings paths; Windows uses the platform's application data directory.
+The desktop app lives in `desktop/` and builds for Linux, Windows, and macOS. It wraps the existing PhoneHaul Node receiver as a bundled sidecar; the transfer protocol, pairing, receive pipeline, disk-backed send queue, and configuration remain in `receiver/`. Rust supervises the sidecar, streams selected files into its existing send API, and forwards its SSE status updates to the small frontend. Linux uses XDG settings paths; Windows and macOS use their platform application data directories.
 
 ## Debian setup
 
@@ -155,6 +155,16 @@ On Windows, install Node.js 24, the Rust stable toolchain, and NSIS. Run this fr
 bash scripts/build-desktop-windows.sh
 ```
 
-The script installs the locked Node dependencies, builds the Windows receiver sidecar and Tauri NSIS installer, then prints the installer path under `desktop/src-tauri/target/release/bundle/nsis/`. The installer is currently unsigned. GitHub Actions uses the same script and uploads the NSIS installer as the `phonehaul-desktop-windows` workflow artifact. macOS remains a future target.
+The script installs the locked Node dependencies, builds the Windows receiver sidecar and Tauri NSIS installer, then prints the installer path under `desktop/src-tauri/target/release/bundle/nsis/`. The installer is currently unsigned. GitHub Actions uses the same script and uploads the NSIS installer as the `phonehaul-desktop-windows` workflow artifact.
+
+## macOS build
+
+On an Intel or Apple Silicon Mac, install Node.js 24, Xcode Command Line Tools, and the Rust stable toolchain. Run from the repository root:
+
+```sh
+./scripts/build-desktop-macos.sh
+```
+
+The script installs the locked Node dependencies, builds a native receiver sidecar and Tauri DMG, then prints the disk image path under `desktop/src-tauri/target/release/bundle/dmg/`. GitHub Actions builds separate Intel and Apple Silicon DMGs as `phonehaul-desktop-macos-x64` and `phonehaul-desktop-macos-arm64` artifacts. The receiver sidecar gets an ad hoc signature so macOS can execute it; the app and DMG still need Developer ID signing and notarization before public distribution. Node.js marks its macOS x64 SEA support as experimental, so the Intel CI build is best-effort.
 
 The app starts the receiver automatically, shuts it down when the desktop process exits, provides native receive-directory and send-file pickers, and displays receiver, phone, transfer, and queue status. System tray support, folder selection in the desktop send UI, and restart controls remain follow-up work.

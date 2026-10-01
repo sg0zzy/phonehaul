@@ -50,6 +50,8 @@ try {
     sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
     machoSegmentName: 'NODE_SEA'
   });
+  // Injection changes the Mach-O binary; macOS requires a fresh signature to run it.
+  if (platform === 'darwin') execFileSync('codesign', ['--force', '--sign', '-', outputPath], { stdio: 'inherit' });
   if (platform !== 'win32') await chmod(outputPath, 0o755);
   console.log(`Standalone receiver created: ${outputPath}`);
 } finally {

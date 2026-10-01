@@ -118,11 +118,26 @@ jobs:
             # To publish a Debian package too, use `appimage,deb` and add the
             # bundle/deb path below.
             artifact-path: desktop/src-tauri/target/release/bundle/appimage/PhoneHaul_*.AppImage
+            artifact-name: phonehaul-desktop-linux
           - platform: windows
             runner: windows-2025
             bundles: nsis
             artifact-path: desktop/src-tauri/target/release/bundle/nsis/*
+            artifact-name: phonehaul-desktop-windows
+          - platform: macos
+            runner: macos-15-intel
+            arch: x64
+            bundles: dmg
+            artifact-path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            artifact-name: phonehaul-desktop-macos-x64
+          - platform: macos
+            runner: macos-15
+            arch: arm64
+            bundles: dmg
+            artifact-path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            artifact-name: phonehaul-desktop-macos-arm64
     runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.platform == 'macos' && matrix.arch == 'x64' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -165,8 +180,14 @@ jobs:
         if: matrix.platform == 'windows'
         run: bash scripts/build-desktop-windows.sh
         shell: bash
+      - name: Build macOS Tauri disk image
+        if: matrix.platform == 'macos'
+        run: bash scripts/build-desktop-macos.sh
+      - name: Smoke test macOS receiver sidecar
+        if: matrix.platform == 'macos'
+        run: npm --prefix receiver run smoke:sea
       - uses: actions/upload-artifact@v6
         with:
-          name: phonehaul-desktop-${{ matrix.platform }}
+          name: ${{ matrix.artifact-name }}
           path: ${{ matrix.artifact-path }}
           if-no-files-found: error
