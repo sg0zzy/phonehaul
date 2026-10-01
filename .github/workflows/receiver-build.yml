@@ -124,13 +124,13 @@ jobs:
             bundles: nsis
             artifact-path: desktop/src-tauri/target/release/bundle/nsis/*
             artifact-name: phonehaul-desktop-windows
-          - platform: macos
+          - platform: macos-intel
             runner: macos-15-intel
             arch: x64
             bundles: dmg
             artifact-path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
             artifact-name: phonehaul-desktop-macos-x64
-          - platform: macos
+          - platform: macos-arm64
             runner: macos-15
             arch: arm64
             bundles: dmg
