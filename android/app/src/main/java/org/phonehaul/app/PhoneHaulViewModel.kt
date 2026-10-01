@@ -128,8 +128,8 @@ class PhoneHaulViewModel(application: Application) : AndroidViewModel(applicatio
                                     pairing = null
                                     selected = emptyList()
                                     inboxJob = null
-                                    error = "Connection to the computer was lost. Scan its QR code again."
-                                    screen = Screen.SCAN
+                                    error = "Connection to the computer was lost. Tap Scan PC QR to reconnect."
+                                    screen = Screen.START
                                     return@launch
                                 }
                             }

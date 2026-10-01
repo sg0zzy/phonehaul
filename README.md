@@ -1,3 +1,9 @@
+## License
+
+PhoneHaul is licensed under the GNU General Public License v3.0.
+See [LICENSE](LICENSE) for details.
+
+
 # PhoneHaul
 
 **Scan. Select. Move.** PhoneHaul transfers files in both directions between an Android phone and a computer on the same local network. It has no accounts, cloud service, or Internet relay.
