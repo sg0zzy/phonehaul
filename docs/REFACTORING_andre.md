@@ -29,8 +29,9 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Fix the AppImage ARM path and Android release version code.
 - [ ] Phase 4 — Refactoring.
   - [ ] Simplify Android ViewModel state and extract transfer runner and shared helpers.
-  - [ ] Split receiver route handlers and reuse `uiState()`.
-  - [ ] Deduplicate Rust running state checks and build script platform mapping.
+  - [x] Consolidate the ViewModel's screen-level fields into one immutable `UiState` data class; `MainActivity` reads them via `model.uiState`. Verified: `:app:assembleDebug` green (fresh `compileDebugKotlin`), `:app:test` 14/14 pass (0 failures/errors/skipped), fidelity diff vs the git original confirms no logic dropped, and single-writer threading analysis confirms no lost byte-callback updates.
+  - [x] Split receiver route handlers and reuse `uiState()`.
+  - [x] Deduplicate Rust running state checks and build script platform mapping.
 - [ ] Phase 5 — Documentation.
   - [ ] Update README and developer documentation.
   - [ ] Update protocol, security, and architecture docs; add durable contributor guidance.

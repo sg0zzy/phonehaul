@@ -7,7 +7,6 @@ import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import java.io.IOException
 import java.io.InputStream
-import java.security.MessageDigest
 import java.util.Locale
 
 data class IncomingFile(
@@ -60,27 +59,6 @@ object PhoneInboxPath {
             "bmp" -> "image/bmp"
             else -> null
         }
-
-    fun renamed(
-        name: String,
-        n: Int,
-    ): String {
-        val dot = name.lastIndexOf('.')
-        val stem = if (dot > 0) name.substring(0, dot) else name
-        val extension = if (dot > 0) name.substring(dot) else ""
-        return if (n == 0) name else "$stem ($n)$extension"
-    }
-
-    fun chooseName(
-        original: String,
-        exists: (String) -> Boolean,
-    ): String {
-        for (suffix in 0..99999) {
-            val candidate = renamed(original, suffix)
-            if (!exists(candidate)) return candidate
-        }
-        throw IOException("Too many filename conflicts")
-    }
 }
 
 class PhoneInbox(
@@ -108,7 +86,7 @@ class PhoneInbox(
         require(file.size in 0..(64L * 1024 * 1024 * 1024) && Regex("[a-f0-9]{64}").matches(file.sha256)) { "Invalid file metadata" }
         val directory = PhoneInboxPath.directory(file.relativePath)
         val original = PhoneInboxPath.name(file.relativePath)
-        val name = PhoneInboxPath.chooseName(original) { exists(directory, it) }
+        val name = Names.uniqueName(original, { it -> exists(directory, it) })
         val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         val mimeType =
             PhoneInboxPath.imageMimeType(name)
@@ -123,7 +101,7 @@ class PhoneInbox(
             }
         val uri: Uri = resolver.insert(collection, values) ?: throw IOException("Cannot create Downloads file")
         try {
-            val digest = MessageDigest.getInstance("SHA-256")
+            val hash = Hashing.sha256Stream()
             var count = 0L
             (resolver.openOutputStream(uri, "w") ?: throw IOException("Cannot write Downloads file")).use { output ->
                 val buffer = ByteArray(256 * 1024)
@@ -131,12 +109,12 @@ class PhoneInbox(
                     val n = input.read(buffer, 0, minOf(buffer.size.toLong(), file.size - count).toInt())
                     if (n < 0) throw IOException("Incomplete transfer")
                     output.write(buffer, 0, n)
-                    digest.update(buffer, 0, n)
+                    hash.update(buffer, 0, n)
                     count += n
                 }
                 output.flush()
             }
-            if (digest.digest().joinToString("") { "%02x".format(it) } != file.sha256) throw IOException("File checksum mismatch")
+            if (hash.hexDigest() != file.sha256) throw IOException("File checksum mismatch")
             val committed = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
             if (resolver.update(uri, committed, null, null) != 1) throw IOException("Cannot publish Downloads file")
             return name

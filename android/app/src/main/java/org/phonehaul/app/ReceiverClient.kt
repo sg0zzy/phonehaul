@@ -8,7 +8,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.URL
-import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import javax.net.ssl.HttpsURLConnection
@@ -24,8 +23,6 @@ data class PreparedFile(
 
 data class UploadResult(
     val status: String,
-    val size: Long?,
-    val sha256: String?,
 )
 
 data class TransferPlan(
@@ -52,7 +49,7 @@ fun pinnedTrustManager(fingerprint: String): X509TrustManager =
             authType: String,
         ) {
             if (chain.isEmpty()) throw CertificateException("Missing receiver certificate")
-            val actual = MessageDigest.getInstance("SHA-256").digest(chain[0].encoded).hex()
+            val actual = Hashing.sha256(chain[0].encoded)
             if (actual != fingerprint) throw CertificateException("Receiver certificate does not match QR code")
         }
     }
@@ -142,7 +139,7 @@ class ReceiverClient(
         uri: Uri,
         onBytes: (Long) -> Unit = {},
     ): Pair<Long, String> {
-        val digest = MessageDigest.getInstance("SHA-256")
+        val hash = Hashing.sha256Stream()
         var total = 0L
         val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot read selected file")
         stream.use { input ->
@@ -151,12 +148,12 @@ class ReceiverClient(
                 currentCoroutineContext().ensureActive()
                 val n = input.read(buffer)
                 if (n < 0) break
-                digest.update(buffer, 0, n)
+                hash.update(buffer, 0, n)
                 total += n
                 onBytes(total)
             }
         }
-        return total to digest.digest().hex()
+        return total to hash.hexDigest()
     }
 
     fun createTransfer(
@@ -171,13 +168,11 @@ class ReceiverClient(
                     .put(
                         "id",
                         item.id,
-                    ).put("type", if (item.isDirectory) "directory" else "file")
+                    ).put("type", "file")
                     .put("relativePath", item.relativePath)
-            if (!item.isDirectory) {
-                entry.put("size", prepared.getValue(item.id).size)
-                prepared.getValue(item.id).sha256?.let { entry.put("sha256", it) }
-                item.modified?.let { entry.put("modified", it) }
-            }
+            entry.put("size", prepared.getValue(item.id).size)
+            prepared.getValue(item.id).sha256?.let { entry.put("sha256", it) }
+            item.modified?.let { entry.put("modified", it) }
             entries.put(entry)
         }
         val request = JSONObject().put("protocol", 1).put("operation", mode.name.lowercase()).put("items", entries)
@@ -221,7 +216,7 @@ class ReceiverClient(
             conn.readTimeout = 60_000
             file.sha256?.let { conn.setRequestProperty("X-PhoneHaul-SHA256", it) }
             conn.setFixedLengthStreamingMode(file.size)
-            val digest = MessageDigest.getInstance("SHA-256")
+            val hash = Hashing.sha256Stream()
             val stream = resolver.openInputStream(file.source.uri) ?: throw IOException("Cannot reopen selected file")
             stream.use { input ->
                 conn.outputStream.use { output ->
@@ -230,13 +225,13 @@ class ReceiverClient(
                         currentCoroutineContext().ensureActive()
                         val n = input.read(buffer)
                         if (n < 0) break
-                        digest.update(buffer, 0, n)
+                        hash.update(buffer, 0, n)
                         output.write(buffer, 0, n)
                         onBytes(n.toLong())
                     }
                 }
             }
-            val actualHash = digest.digest().hex()
+            val actualHash = hash.hexDigest()
             val response = readResponse(conn)
             val status = response.getString("status")
             if (status != "committed" &&
@@ -254,7 +249,7 @@ class ReceiverClient(
             ) {
                 throw IOException("Receiver acknowledgement mismatch")
             }
-            return UploadResult(status, response.optLong("size"), response.optString("sha256"))
+            return UploadResult(status)
         } finally {
             conn.disconnect()
             active = null
@@ -302,5 +297,3 @@ class ReceiverClient(
         call("POST", "/api/send/$id/complete", JSONObject().put("state", state).put("error", error))
     }
 }
-
-private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }

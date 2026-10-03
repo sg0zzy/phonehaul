@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { copyFile, chmod, mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
+import { seaExecutableName } from '../../scripts/shared/platform.js';
 
 const require = createRequire(import.meta.url);
 const { inject } = require('postject');
@@ -15,10 +16,7 @@ const nodeMajor = Number(process.versions.node.split('.')[0]);
 if (nodeMajor < 22) throw new Error('PhoneHaul SEA packaging requires Node.js 22 or newer.');
 
 const platform = process.platform;
-const arch = process.arch;
-const platformName = { win32: 'windows', darwin: 'macos' }[platform] ?? platform;
-const extensions = { win32: '.exe' };
-const outputName = `phonehaul-${platformName}-${arch}${extensions[platform] ?? ''}`;
+const outputName = seaExecutableName();
 const outputPath = path.join(distDir, outputName);
 const tempDir = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-sea-'));
 const bundlePath = path.join(tempDir, 'phonehaul.cjs');

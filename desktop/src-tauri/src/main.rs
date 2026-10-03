@@ -264,6 +264,27 @@ async fn request_json(
     }
     Ok(value)
 }
+
+async fn running_root(client: &Client, local_root: &str, lan_root: &str) -> bool {
+    // Reachability check before issuing any command: the local root first,
+    // then the LAN UI when that host is unavailable.
+    if client
+        .get(local_root)
+        .send()
+        .await
+        .ok()
+        .map_or(false, |response| response.status().is_success())
+    {
+        return true;
+    }
+    client
+        .get(lan_root)
+        .send()
+        .await
+        .ok()
+        .map_or(false, |response| response.status().is_success())
+}
+
 #[tauri::command]
 async fn get_status(service: State<'_, Shared>) -> Result<Value, String> {
     let (status, root) = {
@@ -278,11 +299,17 @@ async fn get_status(service: State<'_, Shared>) -> Result<Value, String> {
 }
 #[tauri::command]
 async fn refresh_qr(service: State<'_, Shared>) -> Result<(), String> {
-    let (root, live) = {
-        let mut s = service.lock().unwrap();
-        (s.root.clone(), running(&mut s))
+    let (root, host, port) = {
+        let s = service.lock().unwrap();
+        (s.root.clone(), s.host.clone(), s.port)
     };
-    if !live {
+    if !running_root(
+        http_client(),
+        &root,
+        &format!("http://{}:{}", host, port),
+    )
+        .await
+    {
         return Err("PhoneHaul server is stopped".into());
     }
     request_json(
@@ -312,11 +339,17 @@ async fn set_destination(app: tauri::AppHandle, service: State<'_, Shared>) -> R
     if !p.is_dir() {
         return Err("Destination must be an existing directory".into());
     }
-    let (root, live) = {
-        let mut s = service.lock().unwrap();
-        (s.root.clone(), running(&mut s))
+    let (root, host, port) = {
+        let s = service.lock().unwrap();
+        (s.root.clone(), s.host.clone(), s.port)
     };
-    if !live {
+    if !running_root(
+        http_client(),
+        &root,
+        &format!("http://{}:{}", host, port),
+    )
+        .await
+    {
         return Err("PhoneHaul server is stopped".into());
     }
     let client = http_client();
@@ -365,11 +398,17 @@ async fn queue_paths(
     paths: Vec<PathBuf>,
     allow_directories: bool,
 ) -> Result<usize, String> {
-    let (root, live) = {
-        let mut service = service.lock().unwrap();
-        (service.root.clone(), running(&mut service))
+    let (root, host, port) = {
+        let service = service.lock().unwrap();
+        (service.root.clone(), service.host.clone(), service.port)
     };
-    if !live {
+    if !running_root(
+        http_client(),
+        &root,
+        &format!("http://{}:{}", host, port),
+    )
+        .await
+    {
         return Err("PhoneHaul server is stopped".into());
     }
 

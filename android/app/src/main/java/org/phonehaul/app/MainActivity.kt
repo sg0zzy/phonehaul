@@ -119,8 +119,8 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme {
-                BackHandler(enabled = model.busy || model.screen != Screen.START) {
-                    if (!model.busy) model.back()
+                BackHandler(enabled = model.uiState.busy || model.uiState.screen != Screen.START) {
+                    if (!model.uiState.busy) model.back()
                 }
                 App(model, cameraDenied, mediaDenied, ::requestScan, ::requestMedia, {
                     filesPicker.launch(arrayOf("*/*"))
@@ -188,9 +188,9 @@ private fun App(
 ) {
     Scaffold(topBar = {
         TopAppBar(title = { Text("PhoneHaul") }, navigationIcon = {
-            if (vm.screen != Screen.START &&
-                vm.screen != Screen.PROGRESS &&
-                vm.screen != Screen.COMPLETE
+            if (vm.uiState.screen != Screen.START &&
+                vm.uiState.screen != Screen.PROGRESS &&
+                vm.uiState.screen != Screen.COMPLETE
             ) {
                 TextButton(onClick = vm::back) { Text("Back") }
             }
@@ -200,7 +200,7 @@ private fun App(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            when (vm.screen) {
+            when (vm.uiState.screen) {
                 Screen.START -> {
                     Heading("Move files from your phone to your computer.")
                     Text("PhoneHaul works only when your phone and computer are connected to the same local network.")
@@ -216,33 +216,37 @@ private fun App(
                 Screen.SCAN -> {
                     Heading("Scan the computer QR")
                     QrScanner(onFound = vm::connect, onError = { vm.showError(it) })
-                    if (vm.busy) Text(vm.status)
+                    if (vm.uiState.busy) Text(vm.uiState.status)
                 }
                 Screen.SELECT -> {
-                    Heading("Connected to ${vm.pairing?.label.orEmpty()}")
+                    Heading("Connected to ${vm.uiState.pairing?.label.orEmpty()}")
                     Text("Phone free space: ${formatBytes(vm.freeBytes)}")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = selectFiles, enabled = !vm.busy) { Text("Select files") }
-                        OutlinedButton(onClick = selectFolder, enabled = !vm.busy) { Text("Select folder") }
+                        Button(onClick = selectFiles, enabled = !vm.uiState.busy) { Text("Select files") }
+                        OutlinedButton(onClick = selectFolder, enabled = !vm.uiState.busy) { Text("Select folder") }
                     }
-                    OutlinedButton(onClick = requestMedia, enabled = !vm.busy) { Text("Photos & videos") }
+                    OutlinedButton(onClick = requestMedia, enabled = !vm.uiState.busy) { Text("Photos & videos") }
                     if (mediaDenied) {
                         Text(
                             "Allow photo and video access to browse media, or use Select files.",
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                    if (vm.busy) {
+                    if (vm.uiState.busy) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 3.dp)
-                            Text(vm.status.ifEmpty { "Reading selection…" })
+                            Text(vm.uiState.status.ifEmpty { "Reading selection…" })
                         }
                     }
                     SelectedSummary(vm)
-                    if (vm.selected.isNotEmpty()) {
+                    if (vm.uiState.selected.isNotEmpty()) {
                         val selectionGroups =
-                            remember(vm.selected) { vm.selected.groupBy { it.relativePath.substringBefore('/') }.toList() }
-                        TextButton(onClick = vm::clearSelection, enabled = !vm.busy) { Text("Clear selection") }
+                            remember(vm.uiState.selected) {
+                                vm.uiState.selected
+                                    .groupBy { it.relativePath.substringBefore('/') }
+                                    .toList()
+                            }
+                        TextButton(onClick = vm::clearSelection, enabled = !vm.uiState.busy) { Text("Clear selection") }
                         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             items(selectionGroups, key = { it.first }) { (name, files) ->
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -250,37 +254,37 @@ private fun App(
                                         if (files.any { '/' in it.relativePath }) "$name/ (${files.size} files)" else name,
                                         Modifier.weight(1f),
                                     )
-                                    TextButton(onClick = { vm.removeTopLevel(name) }, enabled = !vm.busy) { Text("Remove") }
+                                    TextButton(onClick = { vm.removeTopLevel(name) }, enabled = !vm.uiState.busy) { Text("Remove") }
                                 }
                             }
                         }
-                        Button(onClick = vm::review, modifier = Modifier.fillMaxWidth(), enabled = !vm.busy) { Text("Continue") }
+                        Button(onClick = vm::review, modifier = Modifier.fillMaxWidth(), enabled = !vm.uiState.busy) { Text("Continue") }
                     }
-                    TextButton(onClick = vm::disconnect, enabled = !vm.busy) { Text("Disconnect") }
+                    TextButton(onClick = vm::disconnect, enabled = !vm.uiState.busy) { Text("Disconnect") }
                 }
                 Screen.MEDIA -> {
                     Heading("Photos & videos")
                     var previewUri by remember { mutableStateOf<Uri?>(null) }
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         MediaFilter.entries.forEach { filter ->
-                            FilterChip(selected = vm.mediaFilter == filter, onClick = {
+                            FilterChip(selected = vm.uiState.mediaFilter == filter, onClick = {
                                 vm.changeMediaFilter(filter)
                             }, label = { Text(filter.name.lowercase().replaceFirstChar(Char::uppercase)) })
                         }
                     }
                     OutlinedButton(onClick = {
-                        vm.changeMediaSort(MediaSort.entries[(vm.mediaSort.ordinal + 1) % MediaSort.entries.size])
-                    }) { Text("Sort: ${vm.mediaSort.name.lowercase().replaceFirstChar(Char::uppercase)}") }
+                        vm.changeMediaSort(MediaSort.entries[(vm.uiState.mediaSort.ordinal + 1) % MediaSort.entries.size])
+                    }) { Text("Sort: ${vm.uiState.mediaSort.name.lowercase().replaceFirstChar(Char::uppercase)}") }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${vm.mediaChecked.size} selected", Modifier.weight(1f))
+                        Text("${vm.uiState.mediaChecked.size} selected", Modifier.weight(1f))
                         TextButton(onClick = vm::selectAllMedia) { Text("Select all") }
                     }
-                    if (vm.busy) Text("Reading media…")
+                    if (vm.uiState.busy) Text("Reading media…")
                     LazyColumn(Modifier.weight(1f)) {
-                        items(vm.media, key = { it.source.uri.toString() }) { entry ->
+                        items(vm.uiState.media, key = { it.source.uri.toString() }) { entry ->
                             val item = entry.source
                             Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = item.uri in vm.mediaChecked, onCheckedChange = { vm.toggleMedia(item.uri) })
+                                Checkbox(checked = item.uri in vm.uiState.mediaChecked, onCheckedChange = { vm.toggleMedia(item.uri) })
                                 MediaThumbnail(item.uri, entry.isVideo, onClick = { previewUri = item.uri })
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f).clickable { vm.toggleMedia(item.uri) }) {
@@ -294,18 +298,25 @@ private fun App(
                             HorizontalDivider()
                         }
                     }
-                    Button(onClick = vm::addCheckedMedia, modifier = Modifier.fillMaxWidth(), enabled = vm.mediaChecked.isNotEmpty()) {
+                    Button(
+                        onClick = vm::addCheckedMedia,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = vm.uiState.mediaChecked.isNotEmpty(),
+                    ) {
                         Text("Add selected media")
                     }
                     previewUri?.let { uri ->
-                        val isVideo = vm.media.firstOrNull { it.source.uri == uri }?.isVideo == true
+                        val isVideo =
+                            vm.uiState.media
+                                .firstOrNull { it.source.uri == uri }
+                                ?.isVideo == true
                         MediaPreview(uri, isVideo, onDismiss = { previewUri = null })
                     }
                 }
                 Screen.REVIEW -> {
                     Heading("Ready to transfer")
                     SelectedSummary(vm)
-                    Text("Destination: ${vm.pairing?.label.orEmpty()}")
+                    Text("Destination: ${vm.uiState.pairing?.label.orEmpty()}")
                     Text("Phone free space: ${formatBytes(vm.freeBytes)}")
                     Text("Transfers can continue with the screen off. Android may ask to show a transfer notification.")
                     if (!vm.hasUnknownSizes) Text("After MOVE: approximately ${formatBytes(vm.freeBytes + vm.selectedKnownBytes)} free")
@@ -325,41 +336,49 @@ private fun App(
                     ) { Text("COPY — Keep originals") }
                 }
                 Screen.PROGRESS -> {
-                    Heading(vm.status)
-                    Text("${vm.processedCount} of ${vm.fileCount} files processed · ${vm.committedCount} new copies")
+                    Heading(vm.uiState.status)
+                    Text("${vm.uiState.processedCount} of ${vm.fileCount} files processed · ${vm.uiState.committedCount} new copies")
                     LinearProgressIndicator(progress = {
                         if (vm.fileCount >
                             0
                         ) {
-                            ((vm.processedCount + vm.currentFileProgress) / vm.fileCount).coerceIn(0f, 1f)
+                            ((vm.uiState.processedCount + vm.uiState.currentFileProgress) / vm.fileCount).coerceIn(0f, 1f)
                         } else {
                             0f
                         }
                     }, modifier = Modifier.fillMaxWidth())
-                    Text("${formatBytes(vm.sentBytes)} sent · ${formatBytes(vm.totalBytes)} selected")
-                    Text("${formatBytes(vm.bytesPerSecond)}/s · ${((System.currentTimeMillis() - vm.startedAt) / 1000).coerceAtLeast(0)} s")
-                    if (vm.currentFile.isNotEmpty()) Text("Current: ${vm.currentFile}")
-                    if (vm.movedCount > 0) Text("${formatBytes(vm.freedBytes)} freed so far")
-                    if (vm.allowCancel) OutlinedButton(onClick = vm::cancelTransfer) { Text("Cancel") }
+                    Text("${formatBytes(vm.uiState.sentBytes)} sent · ${formatBytes(vm.uiState.totalBytes)} selected")
+                    Text(
+                        "${formatBytes(
+                            vm.uiState.bytesPerSecond,
+                        )}/s · ${((System.currentTimeMillis() - vm.uiState.startedAt) / 1000).coerceAtLeast(0)} s",
+                    )
+                    if (vm.uiState.currentFile.isNotEmpty()) Text("Current: ${vm.uiState.currentFile}")
+                    if (vm.uiState.movedCount > 0) Text("${formatBytes(vm.uiState.freedBytes)} freed so far")
+                    if (vm.uiState.allowCancel) OutlinedButton(onClick = vm::cancelTransfer) { Text("Cancel") }
                 }
                 Screen.COMPLETE -> {
-                    Heading(vm.status)
-                    Text("${vm.committedCount} new files received")
-                    if (vm.identicalCount > 0) Text("${vm.identicalCount} identical files already existed at the destination")
-                    Text("${vm.movedCount} originals removed · ${formatBytes(vm.freedBytes)} freed")
-                    if (vm.skippedCount > 0) Text("${vm.skippedCount} skipped files remain on phone")
-                    if (vm.folderCount > 0) Text("Source folders remain on phone.")
-                    if (vm.deleteFailedCount >
+                    Heading(vm.uiState.status)
+                    Text("${vm.uiState.committedCount} new files received")
+                    if (vm.uiState.identicalCount >
                         0
                     ) {
-                        Text("${vm.deleteFailedCount} originals could not be removed. Their computer copies remain intact.")
+                        Text("${vm.uiState.identicalCount} identical files already existed at the destination")
                     }
-                    if (vm.cancelled) Text("Uncommitted files remain on your phone.")
+                    Text("${vm.uiState.movedCount} originals removed · ${formatBytes(vm.uiState.freedBytes)} freed")
+                    if (vm.uiState.skippedCount > 0) Text("${vm.uiState.skippedCount} skipped files remain on phone")
+                    if (vm.folderCount > 0) Text("Source folders remain on phone.")
+                    if (vm.uiState.deleteFailedCount >
+                        0
+                    ) {
+                        Text("${vm.uiState.deleteFailedCount} originals could not be removed. Their computer copies remain intact.")
+                    }
+                    if (vm.uiState.cancelled) Text("Uncommitted files remain on your phone.")
                     Button(onClick = vm::newBatch, modifier = Modifier.fillMaxWidth()) { Text("Select more files") }
                     OutlinedButton(onClick = vm::disconnect) { Text("Done") }
                 }
             }
-            vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            vm.uiState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
 }

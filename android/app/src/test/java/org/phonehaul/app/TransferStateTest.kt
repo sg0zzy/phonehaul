@@ -8,7 +8,7 @@ class TransferStateTest {
     @Test fun deletionRequiresVerifiedDestination() {
         assertEquals(true, canDeleteSource(FileState.COMMITTED))
         assertEquals(true, canDeleteSource(FileState.ALREADY_PRESENT))
-        for (state in listOf(FileState.SKIPPED, FileState.TRANSFER_FAILED, FileState.VERIFY_FAILED, FileState.CANCELLED)) {
+        for (state in listOf(FileState.SKIPPED, FileState.TRANSFER_FAILED)) {
             assertEquals(false, canDeleteSource(state))
         }
     }

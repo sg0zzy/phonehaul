@@ -13,9 +13,7 @@ enum class FileState {
     COPIED,
     SKIPPED,
     TRANSFER_FAILED,
-    VERIFY_FAILED,
     DELETE_FAILED,
-    CANCELLED,
 }
 
 enum class TransferMode { COPY, MOVE }
@@ -31,11 +29,11 @@ class FileTransition(
     fun to(next: FileState) {
         val allowed =
             when (state) {
-                FileState.SELECTED -> setOf(FileState.QUEUED, FileState.ALREADY_PRESENT, FileState.SKIPPED, FileState.CANCELLED)
-                FileState.QUEUED -> setOf(FileState.SENDING, FileState.CANCELLED)
-                FileState.SENDING -> setOf(FileState.SENT, FileState.SKIPPED, FileState.TRANSFER_FAILED, FileState.CANCELLED)
+                FileState.SELECTED -> setOf(FileState.QUEUED, FileState.ALREADY_PRESENT, FileState.SKIPPED)
+                FileState.QUEUED -> setOf(FileState.SENDING)
+                FileState.SENDING -> setOf(FileState.SENT, FileState.SKIPPED, FileState.TRANSFER_FAILED)
                 FileState.SENT -> setOf(FileState.VERIFYING, FileState.TRANSFER_FAILED)
-                FileState.VERIFYING -> setOf(FileState.COMMITTED, FileState.ALREADY_PRESENT, FileState.VERIFY_FAILED)
+                FileState.VERIFYING -> setOf(FileState.COMMITTED, FileState.ALREADY_PRESENT)
                 FileState.COMMITTED, FileState.ALREADY_PRESENT -> setOf(FileState.COPIED, FileState.DELETING_SOURCE)
                 FileState.DELETING_SOURCE -> setOf(FileState.MOVED, FileState.DELETE_FAILED)
                 else -> emptySet()

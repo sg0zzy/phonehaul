@@ -20,14 +20,12 @@ class PhoneInboxPathTest {
     }
 
     @Test fun duplicateNamesReceiveDeterministicSuffix() {
-        assertEquals("report.pdf", PhoneInboxPath.renamed("report.pdf", 0))
-        assertEquals("report (1).pdf", PhoneInboxPath.renamed("report.pdf", 1))
-        assertEquals("report (2).pdf", PhoneInboxPath.renamed("report.pdf", 2))
-        assertEquals("report (2).pdf", PhoneInboxPath.chooseName("report.pdf") { it in setOf("report.pdf", "report (1).pdf") })
-        assertEquals("report.pdf", PhoneInboxPath.chooseName("report.pdf") { false })
+        assertEquals("report.pdf", Names.uniqueName("report.pdf") { false })
+        assertEquals("report (1).pdf", Names.uniqueName("report.pdf") { it == "report.pdf" })
+        assertEquals("report (2).pdf", Names.uniqueName("report.pdf") { it in setOf("report.pdf", "report (1).pdf") })
         assertEquals(
             "spec (1).pdf",
-            PhoneInboxPath.chooseName(PhoneInboxPath.name("Other/spec.pdf")) {
+            Names.uniqueName(PhoneInboxPath.name("Other/spec.pdf")) {
                 it ==
                     PhoneInboxPath.name("Project/docs/spec.pdf")
             },

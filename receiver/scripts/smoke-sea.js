@@ -9,15 +9,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { localAddress } from '../src/security/pairing.js';
+import { seaExecutableName } from '../../scripts/shared/platform.js';
 
 const receiverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rootDir = path.dirname(receiverDir);
-const platformName = { win32: 'windows', darwin: 'macos' }[process.platform] ?? process.platform;
-const executable = path.join(
-  rootDir,
-  'dist',
-  `phonehaul-${platformName}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`,
-);
+const executable = path.join(rootDir, 'dist', seaExecutableName());
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-sea-smoke-'));
 const host = localAddress();
 let child;

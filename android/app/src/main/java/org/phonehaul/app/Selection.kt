@@ -10,38 +10,16 @@ import java.util.UUID
 
 enum class DeleteCapability { DIRECT, CONFIRMATION, READ_ONLY }
 
-enum class SourceKind { DOCUMENT, MEDIA }
-
 data class SourceItem(
     val id: String = UUID.randomUUID().toString(),
     val uri: Uri,
     val relativePath: String,
     val size: Long?,
     val modified: Long?,
-    val isDirectory: Boolean,
     val deleteCapability: DeleteCapability,
-    val kind: SourceKind = SourceKind.DOCUMENT,
 )
 
 object Selection {
-    private fun safeName(name: String): String {
-        val cleaned = name.map { if (it == '/' || it == '\\' || it.code < 32) '_' else it }.joinToString("").trim()
-        return if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") "unnamed" else cleaned
-    }
-
-    private fun uniqueTopLevel(
-        name: String,
-        used: Set<String>,
-    ): String {
-        if (name !in used) return name
-        val dot = name.lastIndexOf('.')
-        val stem = if (dot > 0) name.substring(0, dot) else name
-        val suffix = if (dot > 0) name.substring(dot) else ""
-        var n = 1
-        while ("$stem ($n)$suffix" in used) n++
-        return "$stem ($n)$suffix"
-    }
-
     private fun capability(
         resolver: ContentResolver,
         uri: Uri,
@@ -70,7 +48,7 @@ object Selection {
         for (uri in uris.distinct()) {
             if (existing.any { it.uri == uri }) continue
             val document = DocumentFile.fromSingleUri(context, uri) ?: continue
-            val name = uniqueTopLevel(safeName(document.name ?: "unnamed"), used)
+            val name = Names.uniqueName(Names.safeName(document.name ?: "unnamed"), { it in used })
             used += name
             result +=
                 SourceItem(
@@ -82,7 +60,6 @@ object Selection {
                             it >
                                 0
                         },
-                    isDirectory = false,
                     deleteCapability = capability(context.contentResolver, uri),
                 )
         }
@@ -97,7 +74,7 @@ object Selection {
         val root = DocumentFile.fromTreeUri(context, uri) ?: throw IllegalArgumentException("Unable to read selected folder")
         require(root.isDirectory) { "Selected item is not a folder" }
         val used = existing.map { it.relativePath.substringBefore('/') }.toSet()
-        val rootName = uniqueTopLevel(safeName(root.name ?: "Folder"), used)
+        val rootName = Names.uniqueName(Names.safeName(root.name ?: "Folder"), { it in used })
         val result = mutableListOf<SourceItem>()
         val resolver = context.contentResolver
         val treeId = DocumentsContract.getTreeDocumentId(uri)
@@ -127,7 +104,7 @@ object Selection {
                 while (it.moveToNext()) {
                     require(++visited <= 100_000) { "Folder is too large or deeply nested" }
                     val childId = it.getString(0)
-                    val name = uniqueTopLevel(safeName(it.getString(1) ?: "unnamed"), usedChildren)
+                    val name = Names.uniqueName(Names.safeName(it.getString(1) ?: "unnamed"), { it in usedChildren })
                     usedChildren += name
                     val childPath = "$relative/$name"
                     if (it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
@@ -141,7 +118,6 @@ object Selection {
                                 relativePath = childPath,
                                 size = if (it.isNull(3)) null else it.getLong(3).takeIf { size -> size >= 0 },
                                 modified = if (it.isNull(4)) null else it.getLong(4).takeIf { time -> time > 0 },
-                                isDirectory = false,
                                 deleteCapability =
                                     if (flags and DocumentsContract.Document.FLAG_SUPPORTS_DELETE !=
                                         0
@@ -174,17 +150,15 @@ object Selection {
             (relativeDirectory.trim('/') + "/" + name)
                 .trimStart('/')
                 .split('/')
-                .joinToString("/") { safeName(it) }
+                .joinToString("/") { Names.safeName(it) }
         return SourceItem(
             uri = android.content.ContentUris.withAppendedId(collection, id),
             relativePath = relative,
             size = size,
             modified = modified,
-            isDirectory = false,
             deleteCapability = DeleteCapability.CONFIRMATION,
-            kind = SourceKind.MEDIA,
         )
     }
 
-    fun canMove(items: List<SourceItem>) = items.filterNot { it.isDirectory }.all { it.deleteCapability != DeleteCapability.READ_ONLY }
+    fun canMove(items: List<SourceItem>) = items.all { it.deleteCapability != DeleteCapability.READ_ONLY }
 }

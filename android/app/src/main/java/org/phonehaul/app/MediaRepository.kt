@@ -10,7 +10,6 @@ enum class MediaSort { LARGEST, NEWEST, OLDEST, NAME }
 data class MediaEntry(
     val source: SourceItem,
     val isVideo: Boolean,
-    val isScreenshot: Boolean,
 )
 
 object MediaRepository {
@@ -45,7 +44,7 @@ object MediaRepository {
                     val size = cursor.getLong(sizeIndex)
                     val modified = cursor.getLong(dateIndex) * 1000L
                     result +=
-                        MediaEntry(Selection.mediaItem(cursor.getLong(idIndex), name, size, modified, isVideo, folder), isVideo, screenshot)
+                        MediaEntry(Selection.mediaItem(cursor.getLong(idIndex), name, size, modified, isVideo, folder), isVideo)
                 }
             }
         }

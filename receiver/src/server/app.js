@@ -109,7 +109,7 @@ export async function startReceiver({
       ...(error.available ? { available: error.available } : {}),
     });
   }
-  const lan = https.createServer({ key, cert }, async (request, response) => {
+  async function handleLan(request, response) {
     try {
       const url = new URL(request.url, 'https://phonehaul.local');
       const token = /^Bearer (.+)$/i.exec(request.headers.authorization || '')?.[1];
@@ -197,12 +197,13 @@ export async function startReceiver({
       if (!response.headersSent) fail(response, error);
       else response.destroy();
     }
-  });
+  }
+  const lan = https.createServer({ key, cert }, handleLan);
   await new Promise((resolve, reject) =>
     lan.once('error', reject).listen(transferPort, host, resolve),
   );
   const port = lan.address().port;
-  const ui = http.createServer(async (request, response) => {
+  async function handleUi(request, response) {
     try {
       const allowedOrigins = new Set([
         `http://127.0.0.1:${ui.address().port}`,
@@ -246,18 +247,14 @@ export async function startReceiver({
           margin: 2,
           width: 320,
         });
+        const partials = await findPartials(settings.destination);
         return json(response, 200, {
           settings,
           qr,
           host,
           port,
-          pairingVersion,
-          connected: phoneOnline(),
-          pairingComplete: session.connected,
-          sendConnected: phoneOnline() && phoneSupportsSend,
-          transfer: transfer.summary(false),
-          sendQueue: sendQueue.summary(),
-          partials: await findPartials(settings.destination),
+          partials,
+          ...uiState(),
         });
       }
       if (url.pathname === '/api/send/items' && request.method === 'POST') {
@@ -296,7 +293,8 @@ export async function startReceiver({
     } catch (error) {
       fail(response, error);
     }
-  });
+  }
+  const ui = http.createServer(handleUi);
   await new Promise((resolve, reject) => ui.once('error', reject).listen(uiPort, uiHost, resolve));
   const uiUrl = `http://${uiHost}:${ui.address().port}/`;
   log('server started', `LAN ${host}:${port}, UI ${uiUrl}`);
