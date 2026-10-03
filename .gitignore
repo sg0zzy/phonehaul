@@ -10,5 +10,8 @@ android/build/
 desktop/node_modules/
 desktop/frontend-dist/
 desktop/src-tauri/target/
-desktop/src-tauri/resources/phonehaul-server
+desktop/src-tauri/resources/phonehaul-server*
+desktop/src-tauri/gen/
+*.jks
+*.keystore
 desktop/src-tauri/bundle-support/
