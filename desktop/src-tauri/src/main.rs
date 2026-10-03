@@ -201,7 +201,7 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::drain_stdout;
+    use super::{drain_stdout, take_sse_events};
     use std::{
         io::{BufReader, Write},
         os::unix::net::UnixStream,
@@ -227,6 +227,17 @@ mod tests {
         reader_thread.join().unwrap();
 
         assert_eq!(read_count.load(Ordering::Relaxed), 4096);
+    }
+
+    #[test]
+    fn event_decoder_preserves_multibyte_text_split_across_chunks() {
+        let payload = "data: {\"destination\":\"Café\"}\n\n";
+        let bytes = payload.as_bytes();
+        let split = bytes.iter().position(|byte| *byte == 0xc3).unwrap() + 1;
+        let mut buffer = Vec::new();
+        assert!(take_sse_events(&mut buffer, &bytes[..split]).is_empty());
+        let events = take_sse_events(&mut buffer, &bytes[split..]);
+        assert_eq!(events[0]["destination"], "Café");
     }
 }
 async fn request_json(
@@ -461,6 +472,22 @@ async fn queue_paths(
     }
     Ok(files.len())
 }
+fn take_sse_events(buffer: &mut Vec<u8>, chunk: &[u8]) -> Vec<Value> {
+    buffer.extend_from_slice(chunk);
+    let mut events = Vec::new();
+    while let Some(pos) = buffer.windows(2).position(|window| window == b"\n\n") {
+        let event = &buffer[..pos];
+        let data = event
+            .split(|byte| *byte == b'\n')
+            .find_map(|line| line.strip_prefix(b"data: "));
+        if let Some(value) = data.and_then(|bytes| serde_json::from_slice(bytes).ok()) {
+            events.push(value);
+        }
+        buffer.drain(..pos + 2);
+    }
+    events
+}
+
 fn start_events(app: tauri::AppHandle, shared: Shared) {
     tauri::async_runtime::spawn(async move {
         let client = http_client();
@@ -473,23 +500,14 @@ fn start_events(app: tauri::AppHandle, shared: Shared) {
                 if let Ok(response) = client.get(format!("{root}/api/events")).send().await {
                     let mut stream = response.bytes_stream();
                     use futures_util::StreamExt;
-                    let mut buffer = String::new();
+                    let mut buffer = Vec::new();
                     while let Some(Ok(bytes)) = stream.next().await {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        while let Some(pos) = buffer.find("\n\n") {
-                            let event = buffer[..pos]
-                                .lines()
-                                .find_map(|line| line.strip_prefix("data: "));
-                            if let Some(data) =
-                                event.and_then(|s| serde_json::from_str::<Value>(s).ok())
-                            {
-                                let (host, port) = {
-                                    let s = shared.lock().unwrap();
-                                    (s.host.clone(), s.port)
-                                };
-                                let _=app.emit("phonehaul://status",json!({"server":{"running":true,"host":host,"port":port},"ui":data}));
-                            }
-                            buffer.drain(..pos + 2);
+                        for data in take_sse_events(&mut buffer, &bytes) {
+                            let (host, port) = {
+                                let s = shared.lock().unwrap();
+                                (s.host.clone(), s.port)
+                            };
+                            let _=app.emit("phonehaul://status",json!({"server":{"running":true,"host":host,"port":port},"ui":data}));
                         }
                     }
                 }
