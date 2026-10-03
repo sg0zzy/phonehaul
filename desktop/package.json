@@ -1,1 +1,21 @@
-{"name":"phonehaul-desktop","private":true,"type":"module","scripts":{"dev":"tauri dev","build":"tauri build","frontend:dev":"vite frontend --host 127.0.0.1 --port 1420","frontend:build":"vite build frontend --outDir ../frontend-dist --emptyOutDir","build:sidecar":"npm --prefix ../receiver run package:sea && node scripts/stage-sidecar.js","stage:appimage-libraries":"node scripts/stage-appimage-libraries.js","package:msix":"node scripts/package-msix.js"},"dependencies":{"@tauri-apps/api":"^2.8.0"},"devDependencies":{"@tauri-apps/cli":"^2.8.0","vite":"^7.1.7"}}
+{
+  "name": "phonehaul-desktop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "frontend:dev": "vite frontend --host 127.0.0.1 --port 1420",
+    "frontend:build": "vite build frontend --outDir ../frontend-dist --emptyOutDir",
+    "build:sidecar": "npm --prefix ../receiver run package:sea && node scripts/stage-sidecar.js",
+    "stage:appimage-libraries": "node scripts/stage-appimage-libraries.js",
+    "package:msix": "node scripts/package-msix.js"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.8.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0",
+    "vite": "^7.1.7"
+  }
+}

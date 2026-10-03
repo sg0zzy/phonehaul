@@ -25,7 +25,13 @@ class PhoneInboxPathTest {
         assertEquals("report (2).pdf", PhoneInboxPath.renamed("report.pdf", 2))
         assertEquals("report (2).pdf", PhoneInboxPath.chooseName("report.pdf") { it in setOf("report.pdf", "report (1).pdf") })
         assertEquals("report.pdf", PhoneInboxPath.chooseName("report.pdf") { false })
-        assertEquals("spec (1).pdf", PhoneInboxPath.chooseName(PhoneInboxPath.name("Other/spec.pdf")) { it == PhoneInboxPath.name("Project/docs/spec.pdf") })
+        assertEquals(
+            "spec (1).pdf",
+            PhoneInboxPath.chooseName(PhoneInboxPath.name("Other/spec.pdf")) {
+                it ==
+                    PhoneInboxPath.name("Project/docs/spec.pdf")
+            },
+        )
     }
 
     @Test fun imageNamesHaveMediaMimeTypes() {

@@ -1,4 +1,5 @@
-export function page() { return `<!doctype html>
+export function page() {
+  return `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PhoneHaul Receiver</title>
 <style>
@@ -43,4 +44,5 @@ const heartbeat=()=>fetch('/api/heartbeat',{method:'POST',cache:'no-store'}).cat
 heartbeat();setInterval(heartbeat,5000);
 new EventSource('/api/events').onmessage=e=>{const s=JSON.parse(e.data);if(pairingVersion!==s.pairingVersion)load().catch(e=>$('error').textContent=e.message);render(s.transfer,s.connected);renderSend(s.sendQueue,s.sendConnected,s.connected);$('qr').hidden=s.pairingComplete;$('refresh').hidden=s.connected;$('pairText').textContent=s.pairingComplete?(s.connected?'Phone paired. The QR code is hidden.':'Phone paired but not currently connected. Generate a new code to pair again.'):'Scan this QR code with PhoneHaul on your Android phone. It refreshes automatically every five minutes until a phone connects.'};
 load().catch(e=>$('error').textContent=e.message);
-</script></html>`; }
+</script></html>`;
+}

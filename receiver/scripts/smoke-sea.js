@@ -13,7 +13,11 @@ import { localAddress } from '../src/security/pairing.js';
 const receiverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rootDir = path.dirname(receiverDir);
 const platformName = { win32: 'windows', darwin: 'macos' }[process.platform] ?? process.platform;
-const executable = path.join(rootDir, 'dist', `phonehaul-${platformName}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`);
+const executable = path.join(
+  rootDir,
+  'dist',
+  `phonehaul-${platformName}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`,
+);
 const temporary = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-sea-smoke-'));
 const host = localAddress();
 let child;
@@ -23,31 +27,55 @@ async function reservePort() {
   server.listen(0, host);
   await once(server, 'listening');
   const { port } = server.address();
-  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
   return port;
 }
 
 async function getPage(url) {
-  return new Promise((resolve, reject) => http.get(url, response => {
-    const chunks = [];
-    response.on('data', chunk => chunks.push(chunk));
-    response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString() }));
-  }).on('error', reject));
+  return new Promise((resolve, reject) =>
+    http
+      .get(url, (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () =>
+          resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString() }),
+        );
+      })
+      .on('error', reject),
+  );
 }
 
 try {
   const transferPort = await reservePort();
-  await writeFile(path.join(temporary, 'settings.json'), JSON.stringify({ destination: path.join(temporary, 'received'), conflict: 'rename' }));
-  child = spawn(executable, [], { env: { ...process.env, PHONEHAUL_TRANSFER_PORT: String(transferPort), PHONEHAUL_SETTINGS_FILE: path.join(temporary, 'settings.json'), PHONEHAUL_NO_BROWSER: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  await writeFile(
+    path.join(temporary, 'settings.json'),
+    JSON.stringify({ destination: path.join(temporary, 'received'), conflict: 'rename' }),
+  );
+  child = spawn(executable, [], {
+    env: {
+      ...process.env,
+      PHONEHAUL_TRANSFER_PORT: String(transferPort),
+      PHONEHAUL_SETTINGS_FILE: path.join(temporary, 'settings.json'),
+      PHONEHAUL_NO_BROWSER: '1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   let output = '';
-  child.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
-  child.stderr.setEncoding('utf8').on('data', chunk => { output += chunk; });
+  child.stdout.setEncoding('utf8').on('data', (chunk) => {
+    output += chunk;
+  });
+  child.stderr.setEncoding('utf8').on('data', (chunk) => {
+    output += chunk;
+  });
   let uiUrl;
   const deadline = Date.now() + 20_000;
   while (!uiUrl && Date.now() < deadline) {
     const match = output.match(/UI (http:\/\/127\.0\.0\.1:\d+\/)/);
     uiUrl = match?.[1];
-    if (!uiUrl && child.exitCode !== null) throw new Error(`Packaged receiver exited early:\n${output}`);
+    if (!uiUrl && child.exitCode !== null)
+      throw new Error(`Packaged receiver exited early:\n${output}`);
     if (!uiUrl) await delay(50);
   }
   assert.ok(uiUrl, `Packaged receiver did not report its local UI URL:\n${output}`);
@@ -58,7 +86,12 @@ try {
   assert.match(output, /LAN transfers: enabled/);
 
   child.kill('SIGTERM');
-  const [code, signal] = await Promise.race([once(child, 'exit'), delay(8_000).then(() => { throw new Error('Packaged receiver did not shut down after SIGTERM'); })]);
+  const [code, signal] = await Promise.race([
+    once(child, 'exit'),
+    delay(8_000).then(() => {
+      throw new Error('Packaged receiver did not shut down after SIGTERM');
+    }),
+  ]);
   // Windows terminates child processes for SIGTERM instead of delivering a
   // catchable signal, so Node reports a null exit code and the signal name.
   if (process.platform === 'win32') assert.equal(signal, 'SIGTERM', output);

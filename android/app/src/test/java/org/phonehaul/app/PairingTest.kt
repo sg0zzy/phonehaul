@@ -6,6 +6,7 @@ import org.junit.Test
 class PairingTest {
     private val token = "a".repeat(43)
     private val fingerprint = "b".repeat(64)
+
     private fun uri(host: String) = "phonehaul://pair?v=1&h=$host&p=57322&s=$token&f=$fingerprint"
 
     @Test fun acceptsPrivateLanAddress() {

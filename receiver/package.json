@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "phonehaul": "./src/server/main.js" },
+  "bin": {
+    "phonehaul": "./src/server/main.js"
+  },
   "scripts": {
     "dev": "node src/server/main.js",
     "start": "node src/server/main.js",
