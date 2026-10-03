@@ -9,7 +9,7 @@ use std::{
     io::{BufRead, BufReader},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{mpsc, Arc, Mutex, OnceLock},
     time::Duration,
 };
 use tauri::{Emitter, Manager, State};
@@ -24,6 +24,26 @@ struct Service {
     error: Option<String>,
 }
 type Shared = Arc<Mutex<Service>>;
+
+fn http_client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .expect("local HTTP client")
+    })
+}
+
+#[cfg(debug_assertions)]
+fn server_override() -> Option<PathBuf> {
+    std::env::var_os("PHONEHAUL_SERVER_BIN").map(PathBuf::from)
+}
+
+#[cfg(not(debug_assertions))]
+fn server_override() -> Option<PathBuf> {
+    None
+}
 
 fn drain_stdout<R, F>(reader: R, mut on_line: F) -> std::thread::JoinHandle<()>
 where
@@ -76,8 +96,8 @@ fn server_status(service: &mut Service) -> ServerStatus {
     }
 }
 fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
-    let bin = if let Some(path) = std::env::var_os("PHONEHAUL_SERVER_BIN") {
-        PathBuf::from(path)
+    let bin = if let Some(path) = server_override() {
+        path
     } else {
         let root = app.path().resource_dir().unwrap_or_default();
         #[cfg(target_os = "windows")]
@@ -107,6 +127,7 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
         .env("PHONEHAUL_DESKTOP_MANAGED", "1")
         .env("PHONEHAUL_NO_BROWSER", "1")
         .env("PHONEHAUL_TRANSFER_PORT", "0")
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
     #[cfg(target_os = "windows")]
@@ -121,38 +142,61 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
         .spawn()
         .map_err(|e| format!("Could not start server: {e}"))?;
     let stdout = child.stdout.take().ok_or("Could not read server startup")?;
-    let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
-    loop {
-        line.clear();
-        if reader.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
-            let status = child.wait().ok();
-            return Err(format!(
-                "PhoneHaul server exited during startup ({status:?})"
-            ));
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => {
+                    let _ =
+                        ready_tx.send(Err("PhoneHaul server exited during startup".to_string()));
+                    return;
+                }
+                Err(error) => {
+                    let _ = ready_tx.send(Err(error.to_string()));
+                    return;
+                }
+                Ok(_) => {
+                    if let Some(data) = line.strip_prefix("PHONEHAUL_READY ") {
+                        let _ = ready_tx.send(Ok(data.to_string()));
+                        break;
+                    }
+                    eprintln!("[PhoneHaul server] {}", line.trim_end());
+                }
+            }
         }
-        if let Some(data) = line.strip_prefix("PHONEHAUL_READY ") {
-            let ready: Value = serde_json::from_str(data).map_err(|e| e.to_string())?;
-            let root = ready["uiUrl"]
-                .as_str()
-                .ok_or("Server startup response missing URL")?
-                .trim_end_matches('/')
-                .to_string();
-            let host = ready["host"].as_str().unwrap_or("0.0.0.0").to_string();
-            let port = ready["port"].as_u64().unwrap_or(0) as u16;
-            // Keep consuming the sidecar's stdout after its ready message. Leaving this
-            // pipe unread makes later Node console.log calls fail with EPIPE and kills
-            // the receiver when a phone connects or a transfer starts.
-            let _log_reader = drain_stdout(reader, |line| eprintln!("[PhoneHaul server] {line}"));
-            return Ok(Service {
-                child: Some(child),
-                root,
-                host,
-                port,
-                error: None,
-            });
+        // Continue consuming logs so the sidecar never blocks on a full stdout pipe.
+        let _log_reader = drain_stdout(reader, |line| eprintln!("[PhoneHaul server] {line}"));
+    });
+    let ready_data = match ready_rx.recv_timeout(Duration::from_secs(30)) {
+        Ok(Ok(data)) => data,
+        Ok(Err(error)) => {
+            let _ = child.wait();
+            return Err(error);
         }
-    }
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("PhoneHaul server startup timed out".into());
+        }
+    };
+    let ready: Value = serde_json::from_str(&ready_data).map_err(|e| e.to_string())?;
+    let root = ready["uiUrl"]
+        .as_str()
+        .ok_or("Server startup response missing URL")?
+        .trim_end_matches('/')
+        .to_string();
+    let host = ready["host"].as_str().unwrap_or("0.0.0.0").to_string();
+    let port = ready["port"].as_u64().unwrap_or(0) as u16;
+    Ok(Service {
+        child: Some(child),
+        root,
+        host,
+        port,
+        error: None,
+    })
 }
 
 #[cfg(all(test, unix))]
@@ -192,7 +236,9 @@ async fn request_json(
     path: &str,
     body: Option<Value>,
 ) -> Result<Value, String> {
-    let mut req = client.request(method, format!("{root}{path}"));
+    let mut req = client
+        .request(method, format!("{root}{path}"))
+        .timeout(Duration::from_secs(10));
     if let Some(b) = body {
         req = req.json(&b);
     }
@@ -216,7 +262,7 @@ async fn get_status(service: State<'_, Shared>) -> Result<Value, String> {
     if !status.running {
         return Ok(json!({"server":status}));
     }
-    let ui = request_json(&Client::new(), &root, reqwest::Method::GET, "/api/ui", None).await?;
+    let ui = request_json(http_client(), &root, reqwest::Method::GET, "/api/ui", None).await?;
     Ok(json!({"server":status,"ui":ui}))
 }
 #[tauri::command]
@@ -229,7 +275,7 @@ async fn refresh_qr(service: State<'_, Shared>) -> Result<(), String> {
         return Err("PhoneHaul server is stopped".into());
     }
     request_json(
-        &Client::new(),
+        http_client(),
         &root,
         reqwest::Method::POST,
         "/api/qr/refresh",
@@ -262,11 +308,11 @@ async fn set_destination(app: tauri::AppHandle, service: State<'_, Shared>) -> R
     if !live {
         return Err("PhoneHaul server is stopped".into());
     }
-    let client = Client::new();
-    let current = request_json(&client, &root, reqwest::Method::GET, "/api/ui", None).await?;
+    let client = http_client();
+    let current = request_json(client, &root, reqwest::Method::GET, "/api/ui", None).await?;
     let conflict = current["settings"]["conflict"].as_str().unwrap_or("rename");
     request_json(
-        &client,
+        client,
         &root,
         reqwest::Method::POST,
         "/api/settings",
@@ -381,7 +427,7 @@ async fn queue_paths(
     if files.is_empty() {
         return Ok(0);
     }
-    let client = Client::new();
+    let client = http_client();
     for (file_path, relative) in &files {
         let meta = tokio::fs::metadata(file_path)
             .await
@@ -394,6 +440,7 @@ async fn queue_paths(
             .map_err(|e| format!("Could not open {}: {e}", file_path.display()))?;
         let response = client
             .post(format!("{root}/api/send/items"))
+            .timeout(Duration::from_secs(6 * 60 * 60))
             .header(header::CONTENT_LENGTH, meta.len())
             .header(
                 "X-PhoneHaul-Relative-Path",
@@ -416,7 +463,7 @@ async fn queue_paths(
 }
 fn start_events(app: tauri::AppHandle, shared: Shared) {
     tauri::async_runtime::spawn(async move {
-        let client = Client::new();
+        let client = http_client();
         loop {
             let (root, live) = {
                 let mut s = shared.lock().unwrap();
