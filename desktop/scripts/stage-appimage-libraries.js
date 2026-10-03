@@ -7,8 +7,8 @@ if (process.platform !== 'linux') {
 }
 
 const architecture = {
-  x64: 'x86_64',
-  arm64: 'aarch64',
+  x64: 'x86_64-linux-gnu',
+  arm64: 'aarch64-linux-gnu',
   arm: 'arm-linux-gnueabihf',
 }[process.arch];
 
@@ -19,8 +19,8 @@ if (!architecture) {
 const root = path.resolve(import.meta.dirname, '../src-tauri');
 const destination = path.join(root, 'bundle-support/libldap.so.2');
 const candidates = [
-  `/lib/${architecture}-linux-gnu/libldap.so.2`,
-  `/usr/lib/${architecture}-linux-gnu/libldap.so.2`,
+  `/lib/${architecture}/libldap.so.2`,
+  `/usr/lib/${architecture}/libldap.so.2`,
   '/lib/libldap.so.2',
   '/usr/lib/libldap.so.2',
 ];

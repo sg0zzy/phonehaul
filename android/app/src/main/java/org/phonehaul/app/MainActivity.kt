@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Size
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,16 +63,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val model: PhoneHaulViewModel by viewModels()
     private var cameraDenied by mutableStateOf(false)
     private var mediaDenied by mutableStateOf(false)
-    private var pendingDelete: CompletableDeferred<Boolean>? = null
     private var pendingTransfer: TransferMode? = null
 
     private val filesPicker =
@@ -81,7 +85,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             pendingTransfer?.let { mode ->
                 pendingTransfer = null
-                model.startTransfer(mode, ::confirmMediaDeletion)
+                model.startTransfer(mode)
             }
         }
     private val cameraPermission =
@@ -96,13 +100,28 @@ class MainActivity : ComponentActivity() {
         }
     private val deleteLauncher =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            pendingDelete?.complete(result.resultCode == Activity.RESULT_OK)
+            model.onDeleteResult(result.resultCode == Activity.RESULT_OK)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                model.deleteRequests.receiveAsFlow().collect { uris ->
+                    try {
+                        val request = MediaStore.createDeleteRequest(contentResolver, uris)
+                        deleteLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+                    } catch (_: Exception) {
+                        model.onDeleteResult(false)
+                    }
+                }
+            }
+        }
         setContent {
             MaterialTheme {
+                BackHandler(enabled = model.busy || model.screen != Screen.START) {
+                    if (!model.busy) model.back()
+                }
                 App(model, cameraDenied, mediaDenied, ::requestScan, ::requestMedia, {
                     filesPicker.launch(arrayOf("*/*"))
                 }, { folderPicker.launch(null) }, ::requestTransfer)
@@ -120,7 +139,7 @@ class MainActivity : ComponentActivity() {
             preferences.edit().putBoolean("notification_permission_requested", true).apply()
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            model.startTransfer(mode, ::confirmMediaDeletion)
+            model.startTransfer(mode)
         }
     }
 
@@ -151,21 +170,6 @@ class MainActivity : ComponentActivity() {
             model.openMedia()
         } else {
             mediaPermissions.launch(permissions)
-        }
-    }
-
-    private suspend fun confirmMediaDeletion(uris: List<Uri>): Boolean {
-        if (uris.isEmpty()) return true
-        val result = CompletableDeferred<Boolean>()
-        pendingDelete = result
-        return try {
-            val request = MediaStore.createDeleteRequest(contentResolver, uris)
-            deleteLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
-            result.await()
-        } catch (_: Exception) {
-            false
-        } finally {
-            pendingDelete = null
         }
     }
 }

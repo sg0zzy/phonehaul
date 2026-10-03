@@ -105,7 +105,15 @@ export async function run(uri, files, operation = 'copy') {
     pair,
     'POST',
     '/api/transfers',
-    JSON.stringify({ protocol: 1, operation, items: items.map(({ source, ...item }) => item) }),
+    JSON.stringify({
+      protocol: 1,
+      operation,
+      items: items.map((item) => {
+        const manifestItem = { ...item };
+        delete manifestItem.source;
+        return manifestItem;
+      }),
+    }),
     { 'Content-Type': 'application/json' },
   );
   for (const item of items.filter((i) => i.type === 'file')) {

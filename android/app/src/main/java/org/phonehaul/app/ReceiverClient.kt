@@ -9,6 +9,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.URL
 import java.security.MessageDigest
+import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -37,6 +38,25 @@ class ReceiverHttpException(
     message: String,
 ) : IOException(message)
 
+fun pinnedTrustManager(fingerprint: String): X509TrustManager =
+    object : X509TrustManager {
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+
+        override fun checkClientTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+        ) = Unit
+
+        override fun checkServerTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+        ) {
+            if (chain.isEmpty()) throw CertificateException("Missing receiver certificate")
+            val actual = MessageDigest.getInstance("SHA-256").digest(chain[0].encoded).hex()
+            if (actual != fingerprint) throw CertificateException("Receiver certificate does not match QR code")
+        }
+    }
+
 class ReceiverClient(
     private val resolver: ContentResolver,
     private val pairing: Pairing,
@@ -44,28 +64,7 @@ class ReceiverClient(
     @Volatile private var active: HttpsURLConnection? = null
     private val sslContext: SSLContext =
         SSLContext.getInstance("TLS").apply {
-            val manager =
-                object : X509TrustManager {
-                    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-
-                    override fun checkClientTrusted(
-                        chain: Array<X509Certificate>,
-                        authType: String,
-                    ) = Unit
-
-                    override fun checkServerTrusted(
-                        chain: Array<X509Certificate>,
-                        authType: String,
-                    ) {
-                        if (chain.isEmpty()) throw java.security.cert.CertificateException("Missing receiver certificate")
-                        val actual = MessageDigest.getInstance("SHA-256").digest(chain[0].encoded).hex()
-                        if (actual !=
-                            pairing.fingerprint
-                        ) {
-                            throw java.security.cert.CertificateException("Receiver certificate does not match QR code")
-                        }
-                    }
-                }
+            val manager = pinnedTrustManager(pairing.fingerprint)
             init(null, arrayOf<TrustManager>(manager), null)
         }
 
@@ -76,6 +75,8 @@ class ReceiverClient(
         val url = URL("https://${pairing.host}:${pairing.port}$route")
         return (url.openConnection() as HttpsURLConnection).apply {
             sslSocketFactory = sslContext.socketFactory
+            // The QR fingerprint is verified by the trust manager during TLS. The
+            // receiver certificate uses a fixed name, so the QR host is checked here.
             hostnameVerifier = javax.net.ssl.HostnameVerifier { host, _ -> host == pairing.host }
             requestMethod = method
             connectTimeout = 10_000

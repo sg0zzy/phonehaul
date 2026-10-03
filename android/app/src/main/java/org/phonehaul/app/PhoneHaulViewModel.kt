@@ -10,8 +10,10 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.ConnectException
@@ -82,6 +84,8 @@ class PhoneHaulViewModel(
     private var transferJob: Job? = null
     private var inboxJob: Job? = null
     private var transferServiceStarted = false
+    private var pendingDelete: CompletableDeferred<Boolean>? = null
+    val deleteRequests = Channel<List<Uri>>(Channel.BUFFERED)
     private val transitions = mutableMapOf<String, FileTransition>()
 
     val fileCount get() = selected.count { !it.isDirectory }
@@ -196,8 +200,12 @@ class PhoneHaulViewModel(
                             } else {
                                 "Receiver rejected connection: ${e.message}"
                             }
-                        is SSLException -> "Secure connection failed. Scan a fresh QR and check the computer's date and time. ${e.message.orEmpty()}"
-                        is ConnectException, is NoRouteToHostException, is SocketTimeoutException, is UnknownHostException -> "Unable to reach ${parsed.label}. Check that PhoneHaul Receiver is running, both devices are on the same local network, and the computer firewall allows the receiver port. ${e.message.orEmpty()}"
+                        is SSLException ->
+                            "Secure connection failed. Scan a fresh QR. ${e.message.orEmpty()}"
+                        is ConnectException, is NoRouteToHostException, is SocketTimeoutException, is UnknownHostException ->
+                            "Unable to reach ${parsed.label}. Check that PhoneHaul Receiver is running, " +
+                                "both devices are on the same local network, and the computer firewall allows " +
+                                "the receiver port. ${e.message.orEmpty()}"
                         else -> "Could not connect to ${parsed.label}: ${e.message.orEmpty()}"
                     }
                 screen = Screen.START
@@ -319,10 +327,23 @@ class PhoneHaulViewModel(
         screen = Screen.SELECT
     }
 
-    fun startTransfer(
-        mode: TransferMode,
-        confirmMediaDelete: suspend (List<Uri>) -> Boolean,
-    ) {
+    fun onDeleteResult(approved: Boolean) {
+        pendingDelete?.complete(approved)
+    }
+
+    private suspend fun confirmMediaDelete(uris: List<Uri>): Boolean {
+        if (uris.isEmpty()) return true
+        val result = CompletableDeferred<Boolean>()
+        pendingDelete = result
+        return try {
+            deleteRequests.send(uris)
+            result.await()
+        } finally {
+            if (pendingDelete === result) pendingDelete = null
+        }
+    }
+
+    fun startTransfer(mode: TransferMode) {
         if (selected.isEmpty() || busy || mode == TransferMode.MOVE && !canMove) return
         val receiver = client ?: return
         val application = getApplication<Application>()
@@ -456,9 +477,11 @@ class PhoneHaulViewModel(
                             continue
                         }
                         if (item.deleteCapability == DeleteCapability.CONFIRMATION) {
+                            check(canDeleteSource(state.state)) { "Cannot request deletion before receiver verification" }
                             mediaCommitted += file
                             continue
                         }
+                        check(canDeleteSource(state.state)) { "Cannot delete source before receiver verification" }
                         state.to(FileState.DELETING_SOURCE)
                         val deleted =
                             withContext(Dispatchers.IO) {
@@ -489,11 +512,8 @@ class PhoneHaulViewModel(
                             for (file in group) {
                                 val item = file.source
                                 val state = transitions.getValue(item.id)
-                                if (state.state == FileState.COMMITTED ||
-                                    state.state == FileState.ALREADY_PRESENT
-                                ) {
-                                    state.to(FileState.DELETING_SOURCE)
-                                }
+                                check(canDeleteSource(state.state)) { "Cannot delete source before receiver verification" }
+                                state.to(FileState.DELETING_SOURCE)
                                 if (approved) {
                                     state.to(FileState.MOVED)
                                     movedCount++
@@ -528,6 +548,7 @@ class PhoneHaulViewModel(
     }
 
     override fun onCleared() {
+        pendingDelete?.complete(false)
         if (transferServiceStarted) getApplication<Application>().stopService(Intent(getApplication(), TransferService::class.java))
         super.onCleared()
     }

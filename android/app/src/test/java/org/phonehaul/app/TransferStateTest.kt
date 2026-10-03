@@ -1,9 +1,18 @@
 package org.phonehaul.app
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class TransferStateTest {
+    @Test fun deletionRequiresVerifiedDestination() {
+        assertEquals(true, canDeleteSource(FileState.COMMITTED))
+        assertEquals(true, canDeleteSource(FileState.ALREADY_PRESENT))
+        for (state in listOf(FileState.SKIPPED, FileState.TRANSFER_FAILED, FileState.VERIFY_FAILED, FileState.CANCELLED)) {
+            assertEquals(false, canDeleteSource(state))
+        }
+    }
+
     @Test fun moveRequiresCommitBeforeDeletion() {
         val file = FileTransition()
         assertThrows(IllegalArgumentException::class.java) { file.to(FileState.DELETING_SOURCE) }

@@ -10,6 +10,8 @@ data class Pairing(
     val fingerprint: String,
 ) {
     val label: String get() = "$host:$port"
+
+    override fun toString(): String = "Pairing(host=$host, port=$port, token=<redacted>, fingerprint=$fingerprint)"
 }
 
 object PairingParser {

@@ -1,8 +1,26 @@
 package org.phonehaul.app
 
-enum class FileState { SELECTED, QUEUED, SENDING, SENT, VERIFYING, COMMITTED, ALREADY_PRESENT, DELETING_SOURCE, MOVED, COPIED, SKIPPED, TRANSFER_FAILED, VERIFY_FAILED, DELETE_FAILED, CANCELLED }
+enum class FileState {
+    SELECTED,
+    QUEUED,
+    SENDING,
+    SENT,
+    VERIFYING,
+    COMMITTED,
+    ALREADY_PRESENT,
+    DELETING_SOURCE,
+    MOVED,
+    COPIED,
+    SKIPPED,
+    TRANSFER_FAILED,
+    VERIFY_FAILED,
+    DELETE_FAILED,
+    CANCELLED,
+}
 
 enum class TransferMode { COPY, MOVE }
+
+fun canDeleteSource(state: FileState): Boolean = state == FileState.COMMITTED || state == FileState.ALREADY_PRESENT
 
 class FileTransition(
     initial: FileState = FileState.SELECTED,
