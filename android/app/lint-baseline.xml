@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.9.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.9.2)" variant="all" version="8.9.2">
+
+    <issue
+        id="ImplicitSamInstance"
+        message="This argument is a new instance so `stopService` will not remove anything"
+        errorLine1="                    application.stopService(Intent(application, TransferService::class.java))"
+        errorLine2="                                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/org/phonehaul/app/PhoneHaulViewModel.kt"
+            line="528"
+            column="45"/>
+    </issue>
+
+    <issue
+        id="ImplicitSamInstance"
+        message="This argument is a new instance so `stopService` will not remove anything"
+        errorLine1="        if (transferServiceStarted) getApplication&lt;Application>().stopService(Intent(getApplication(), TransferService::class.java))"
+        errorLine2="                                                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/org/phonehaul/app/PhoneHaulViewModel.kt"
+            line="535"
+            column="79"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.activity:activity-compose than 1.10.1 is available: 1.13.0"
+        errorLine1="    implementation(&quot;androidx.activity:activity-compose:1.10.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="85"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.9.0 is available: 2.11.0"
+        errorLine1="    implementation(&quot;androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="86"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.9.0 is available: 2.11.0"
+        errorLine1="    implementation(&quot;androidx.lifecycle:lifecycle-runtime-compose:2.9.0&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="87"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.documentfile:documentfile than 1.0.1 is available: 1.1.0"
+        errorLine1="    implementation(&quot;androidx.documentfile:documentfile:1.0.1&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="88"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.camera:camera-core than 1.4.2 is available: 1.6.2"
+        errorLine1="    implementation(&quot;androidx.camera:camera-core:1.4.2&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="89"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.camera:camera-camera2 than 1.4.2 is available: 1.6.2"
+        errorLine1="    implementation(&quot;androidx.camera:camera-camera2:1.4.2&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="90"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.camera:camera-lifecycle than 1.4.2 is available: 1.6.2"
+        errorLine1="    implementation(&quot;androidx.camera:camera-lifecycle:1.4.2&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="91"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.camera:camera-view than 1.4.2 is available: 1.6.2"
+        errorLine1="    implementation(&quot;androidx.camera:camera-view:1.4.2&quot;)"
+        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="92"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="CustomX509TrustManager"
+        message="Implementing a custom `X509TrustManager` is error-prone and likely to be insecure. It is likely to disable certificate validation altogether, and is non-trivial to implement correctly without calling Android&apos;s default implementation."
+        errorLine1="                object : X509TrustManager {"
+        errorLine2="                ~~~~~~">
+        <location
+            file="src/main/java/org/phonehaul/app/ReceiverClient.kt"
+            line="48"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="DataExtractionRules"
+        message="The attribute `android:allowBackup` is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute `android:dataExtractionRules` specifying an `@xml` resource which configures cloud backups and device transfers on Android 12 and higher."
+        errorLine1="    &lt;application android:allowBackup=&quot;false&quot; android:label=&quot;PhoneHaul&quot; android:theme=&quot;@android:style/Theme.Material.Light.NoActionBar&quot; android:usesCleartextTraffic=&quot;false&quot;>"
+        errorLine2="                                      ~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="13"
+            column="39"/>
+    </issue>
+
+    <issue
+        id="MissingApplicationIcon"
+        message="Should explicitly set `android:icon`, there is no default"
+        errorLine1="    &lt;application android:allowBackup=&quot;false&quot; android:label=&quot;PhoneHaul&quot; android:theme=&quot;@android:style/Theme.Material.Light.NoActionBar&quot; android:usesCleartextTraffic=&quot;false&quot;>"
+        errorLine2="     ~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="13"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="            preferences.edit().putBoolean(&quot;notification_permission_requested&quot;, true).apply()"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/org/phonehaul/app/MainActivity.kt"
+            line="120"
+            column="13"/>
+    </issue>
+
+</issues>

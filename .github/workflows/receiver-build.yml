@@ -29,7 +29,7 @@ jobs:
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Build APK and run unit tests
         working-directory: android
-        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck
       - uses: actions/upload-artifact@v6
         with:
           name: phonehaul-android-debug
@@ -47,21 +47,6 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
-          # Re-enable these standalone Windows SEA builds after the Tauri
-          # Windows packaging path has been tested and stabilized.
-          # - runner: windows-2025
-          #   platform: windows
-          #   arch: x64
-          # - runner: windows-11-arm
-          #   platform: windows
-          #   arch: arm64
-          # macOS releases use the Tauri DMGs in the desktop job below.
-          # - runner: macos-15-intel
-          #   platform: macos
-          #   arch: x64
-          # - runner: macos-15
-          #   platform: macos
-          #   arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
@@ -71,11 +56,10 @@ jobs:
       - name: Verify Node.js version
         run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
       - name: Install receiver dependencies
-        run: npm install --prefix receiver
+        run: npm ci --prefix receiver
       - name: Run receiver tests
         run: npm --prefix receiver test
       - name: Install AppImage tooling
-        if: matrix.platform == 'linux'
         shell: bash
         run: |
           case "${{ matrix.arch }}" in
@@ -89,7 +73,6 @@ jobs:
           echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
           echo "APPIMAGE_RUNTIME=$RUNNER_TEMP/appimage-runtime" >> "$GITHUB_ENV"
       - name: Build AppImage and standalone executable
-        if: matrix.platform == 'linux'
         run: npm --prefix receiver run package:appimage
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
@@ -145,6 +128,8 @@ jobs:
             desktop/package-lock.json
             receiver/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Install Linux Tauri dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -167,6 +152,19 @@ jobs:
       - name: Install desktop dependencies
         if: matrix.platform == 'linux'
         run: npm ci --prefix desktop
+      - name: Install root check dependencies
+        if: matrix.platform == 'linux'
+        run: npm ci
+      - name: Check JavaScript and integration flow
+        if: matrix.platform == 'linux'
+        run: npm run check
+      - name: Check Rust formatting, lint, and tests
+        if: matrix.platform == 'linux'
+        working-directory: desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy -- -D warnings
+          cargo test
       - name: Build Linux Tauri bundles
         if: matrix.platform == 'linux'
         run: npm run build -- --bundles ${{ matrix.bundles }}

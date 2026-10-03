@@ -23,7 +23,7 @@ phonehaul_use_node() {
 
 phonehaul_install_receiver_deps() {
   if [[ ! -x "$PHONEHAUL_ROOT/receiver/node_modules/.bin/esbuild" || ! -d "$PHONEHAUL_ROOT/receiver/node_modules/postject" ]]; then
-    npm install --prefix "$PHONEHAUL_ROOT/receiver"
+    npm ci --prefix "$PHONEHAUL_ROOT/receiver"
   else
     echo "Receiver dependencies are already installed."
   fi

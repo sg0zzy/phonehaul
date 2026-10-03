@@ -9,7 +9,7 @@ npm run build
 phonehaul_build_android
 phonehaul_build_appimage
 [[ "$(uname -s)" == Linux ]] || phonehaul_die "Tauri AppImage builds must run on Linux."
-npm install --prefix "$PHONEHAUL_ROOT/desktop"
+npm ci --prefix "$PHONEHAUL_ROOT/desktop"
 cd "$PHONEHAUL_ROOT/desktop"
 npm run build -- --bundles appimage
 echo "All builds completed."
