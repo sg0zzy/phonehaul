@@ -73,6 +73,71 @@ function emptyRequest(uiUrl, route, method = 'POST') {
   });
 }
 
+function localRequest(uiUrl, route, { method = 'GET', headers = {}, data } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(new URL(route, uiUrl), { method, headers }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () =>
+        resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString() }),
+      );
+    });
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+
+test('management UI rejects foreign Host and Origin without changing settings', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-ui-origin-'));
+  const settingsFile = path.join(root, 'settings.json');
+  const destination = path.join(root, 'dest');
+  await writeFile(settingsFile, JSON.stringify({ destination, conflict: 'rename' }));
+  const receiver = await startReceiver({ host: '127.0.0.1', settingsFile });
+  const changed = JSON.stringify({ destination: path.join(root, 'changed'), conflict: 'replace' });
+  try {
+    assert.equal(
+      (await localRequest(receiver.uiUrl, '/api/ui', { headers: { Host: 'evil.example' } })).status,
+      403,
+    );
+    assert.equal(
+      (
+        await localRequest(receiver.uiUrl, '/api/settings', {
+          method: 'POST',
+          headers: { Origin: 'https://evil.example', 'Content-Type': 'text/plain' },
+          data: changed,
+        })
+      ).status,
+      403,
+    );
+    assert.deepEqual(JSON.parse(await readFile(settingsFile, 'utf8')), {
+      destination,
+      conflict: 'rename',
+    });
+    assert.equal(
+      (
+        await localRequest(receiver.uiUrl, '/api/settings', {
+          method: 'POST',
+          headers: { Origin: new URL(receiver.uiUrl).origin, 'Content-Type': 'application/json' },
+          data: changed,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await localRequest(receiver.uiUrl, '/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({ destination, conflict: 'rename' }),
+        })
+      ).status,
+      200,
+    );
+  } finally {
+    await receiver.close();
+  }
+});
+
 test('management UI is local, self-contained, and closes cleanly', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-ui-'));
   const settingsFile = path.join(root, 'settings.json');

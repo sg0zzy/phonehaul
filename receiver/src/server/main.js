@@ -26,6 +26,8 @@ async function main() {
         }
       };
       for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, stop);
+      process.stdin.on('end', stop);
+      process.stdin.resume();
       console.log(
         `PHONEHAUL_READY ${JSON.stringify({ uiUrl: receiver.uiUrl, host: receiver.host, port: receiver.port })}`,
       );

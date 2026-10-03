@@ -204,6 +204,18 @@ export async function startReceiver({
   const port = lan.address().port;
   const ui = http.createServer(async (request, response) => {
     try {
+      const allowedOrigins = new Set([
+        `http://127.0.0.1:${ui.address().port}`,
+        `http://localhost:${ui.address().port}`,
+      ]);
+      const host = request.headers.host;
+      if (!host || !allowedOrigins.has(`http://${host}`)) {
+        return json(response, 403, { error: 'Invalid management host' });
+      }
+      const origin = request.headers.origin;
+      if (request.method !== 'GET' && origin !== undefined && !allowedOrigins.has(origin)) {
+        return json(response, 403, { error: 'Invalid management origin' });
+      }
       const url = new URL(request.url, 'http://localhost');
       if (url.pathname === '/' && request.method === 'GET') {
         response.writeHead(200, {

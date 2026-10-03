@@ -67,3 +67,53 @@ test('desktop managed mode reports its address and shuts down on SIGTERM', async
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('desktop managed mode exits when its wrapper closes stdin', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-managed-stdin-'));
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL('../src/server/main.js', import.meta.url))],
+    {
+      env: {
+        ...process.env,
+        PHONEHAUL_DESKTOP_MANAGED: '1',
+        PHONEHAUL_NO_BROWSER: '1',
+        PHONEHAUL_TRANSFER_PORT: '0',
+        PHONEHAUL_SETTINGS_FILE: path.join(directory, 'settings.json'),
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+  try {
+    let output = '';
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Managed server did not start: ${output}`)),
+        10_000,
+      );
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => {
+        output += chunk;
+        if (output.includes('PHONEHAUL_READY ')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`Managed server exited early (${code}): ${output}`));
+      });
+    });
+    child.stdin.end();
+    const [code, signal] = await once(child, 'exit');
+    assert.equal(code, 0);
+    assert.equal(signal, null);
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await rm(directory, { recursive: true, force: true });
+  }
+});

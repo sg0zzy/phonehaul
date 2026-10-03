@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { relativePath, safeParent } from '../src/security/paths.js';
@@ -45,6 +45,21 @@ test('manifest validates unique paths, ids, and sizes', () => {
   assert.throws(() => validateManifest(manifest([file('a', 'x', 1), file('b', 'x', 2)])));
   assert.throws(() => validateManifest(manifest([file('a', 'x', -1)])));
   assert.equal(validateManifest(manifest([file('a', 'x', 1)])).totalBytes, 1);
+});
+
+test('protocol manifest vector stays valid and SHA-256 remains optional', async () => {
+  const vector = JSON.parse(
+    await readFile(
+      new URL('../../protocol/test-vectors/manifest-copy.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const validated = validateManifest(vector);
+  assert.equal(validated.items.length, vector.items.length);
+  assert.equal(validated.totalBytes, 5);
+  const withoutHash = structuredClone(vector);
+  delete withoutHash.items[1].sha256;
+  assert.equal(validateManifest(withoutHash).items[1].sha256, null);
 });
 
 test('unused pairing expires and connected pairing remains valid', () => {

@@ -64,7 +64,7 @@ test('Linux default destination follows XDG configured Downloads directory', asy
     '/home/test/Scaricati',
   );
   assert.equal(
-    parseXdgDownloadsDirectory('XDG_DOWNLOAD_DIR="/mnt/Big Disk/Download\\\"s"', '/home/test'),
+    parseXdgDownloadsDirectory('XDG_DOWNLOAD_DIR="/mnt/Big Disk/Download\\"s"', '/home/test'),
     '/mnt/Big Disk/Download"s',
   );
   assert.equal(
