@@ -33,13 +33,27 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Split receiver route handlers and reuse `uiState()`.
   - [x] Deduplicate Rust running state checks and build script platform mapping.
 - [ ] Phase 5 — Documentation.
-  - [ ] Update README and developer documentation.
-  - [ ] Update protocol, security, and architecture docs; add durable contributor guidance.
-  - [ ] Check documented commands and links.
+  - [x] Update README and developer documentation.
+  - [x] Update protocol, security, and architecture docs; add durable contributor guidance.
+  - [x] Check documented commands and links.
 
 Baseline on 2026-10-02: `npm --prefix receiver test` passed 33/33 using local Node 24.21.0. The new file was untracked when work began.
 
 Work log (2026-10-02): Work is on local branch `refactor/andre-progress`, with uncommitted changes. `npm run check` passes with 36/36 receiver tests and the integration smoke test. Android `:app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck` passes after generating `android/app/lint-baseline.xml`; Rust `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` pass with two tests. The foreign-Host test failed with HTTP 200 before the guard and passes with HTTP 403 after it. The generated-schema and keystore ignore patterns were checked with `git check-ignore`. Root `npm ci` succeeds. CI has been edited but has not run remotely. No device or emulator was attached for the rotation test. Hard link support was checked against [Microsoft's file system comparison](https://learn.microsoft.com/en-us/windows/win32/fileio/filesystem-functionality-comparison), but no exFAT filesystem was mounted locally. No commits, pushes, PRs, or external report publication have been made.
+
+Work log (2026-10-04): Phase 5 (Documentation) complete. Restructured
+README (title → what it is → download → troubleshooting, with desktop-app vs
+standalone-receiver notes, → links to the docs); created `docs/development.md`
+(builds, release workflow, env-var table, settings paths, canonical checks);
+updated `docs/protocol.md` (response bodies + error codes 401/507, PUT ack,
+skipped), `docs/security.md` (loopback guard, Tauri↔sidecar boundary,
+incoming-files model), `docs/architecture.md` (desktop sidecar, ports, signing
+status), and added `AGENTS.md` (durable contributor rules). Verified: `npm run
+check` passes; `npm run package:sea --prefix receiver` writes `dist/phonehaul-linux-x64`;
+`npm run smoke:sea --prefix receiver` passes; AppImage and desktop builds are
+CI-tooling-gated (`appimagetool`/runtime and `libxdo-dev` absent here, correctly
+documented as build-time-only); all Markdown links resolve. Phase 5 checkboxes
+marked complete.
 
 Context
 Stefano Gozzi built PhoneHaul (sg0zzy/phonehaul, 23 commits, about 5k lines) with AI help. It transfers files over the local network between an Android phone and a computer. It has three parts:

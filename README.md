@@ -1,181 +1,89 @@
-## License
-
-PhoneHaul is licensed under the GNU General Public License v3.0.
-See [LICENSE](LICENSE) for details.
-
-
 # PhoneHaul
 
-**Scan. Select. Move.** PhoneHaul transfers files in both directions between an Android phone and a computer on the same local network. It has no accounts, cloud service, or Internet relay.
+Move files between an Android phone and a computer over your local network.
+No cloud, no server to run beyond the receiver itself, and no account.
 
-You can also send files or folders from the computer: drop them on the receiver page or use **Select files** / **Select folder**. Files enter an ordered queue immediately, wait if the phone is disconnected, and send automatically while the Android app is open. Every file goes directly into Android's public `Downloads` directory; folder contents are flattened. The Android destination cannot be changed. Existing names receive a numeric suffix such as `report (1).pdf`; existing files are not overwritten. Empty folders are not preserved. Interrupted files are retried from the start by adding them again; there is no partial resume or background Android receiver.
+## How it works
 
-This repository contains the desktop receiver, a native Android client, and a fake sender for protocol testing. The fake sender never deletes source files; MOVE deletion belongs to the Android client.
+1. Run the receiver on your computer (or the desktop app, which runs one for
+   you).
+2. Scan the QR code with the PhoneHaul Android app.
+3. Select files or folders on your phone; they land in a folder on your
+   computer.
+4. (Optional) Select files/folders on your computer and they're sent to your
+   phone's `Downloads` folder.
 
-## Desktop Receiver
+Folder contents are preserved; files already present at the destination are
+skipped (configurable) rather than re-downloaded.
 
-End users do not need Node.js, npm, or development tools. Download the PhoneHaul Receiver for your system and launch it. The receiver starts and opens the PhoneHaul page in your default browser. Scan the displayed QR code with PhoneHaul on Android, select files, then choose MOVE or COPY.
+## Download
 
-Linux AppImages are the primary Linux distribution format:
+Builds are produced by CI (`.github/workflows/`). Download from a workflow run's
+**Files** tab, or from GitHub Releases once tagged:
 
-```sh
-chmod +x PhoneHaul-x86_64.AppImage
-./PhoneHaul-x86_64.AppImage
-```
+| You are on | Get |
+|------------|-----|
+| **Android** | the `phonehaul-android-debug` APK/AAB artifact |
+| **Linux (receiver only)** | `phonehaul-linux-x64` / `phonehaul-linux-arm64` (receiver + AppImage) |
+| **Linux / macOS / Windows (desktop app)** | `phonehaul-desktop-{linux, windows, macos-x64, macos-arm64}` |
 
-The receiver binds the management page to `127.0.0.1`, while its HTTPS transfer listener remains reachable at the selected private LAN address. The AppImage browser page sends a heartbeat every 5 seconds; if no heartbeat arrives for 15 seconds, the receiver shuts down. The executable stores settings in the normal per-user configuration directory and does not write mutable data beside itself. No administrator/root privileges are required.
+### Which AppImage do I pick on Linux?
 
-Current local builds produce a standalone host executable. Linux can also wrap it in an AppImage. The Tauri desktop build produces a Windows installer or macOS DMG on the matching host OS. These builds are not signed for public distribution; public releases should be signed and macOS releases notarized.
+There are two Linux AppImages — they do different things:
 
-### Run from source
+| AppImage | What it is | Use it when |
+|----------|-----------|-------------|
+| **`PhoneHaul-x86_64.AppImage`** (receiver) | The **standalone receiver**: just the LAN/QR receiver + local UI, as a single portable file. | You only need to **receive** files from your phone and don't need the native desktop shell (file pickers, drag-drop, auto-restart, system tray). |
+| **`PhoneHaul_*.AppImage`** (desktop) | The **desktop app**: a full Tauri window that **bundles and supervises the receiver** as a child process, with native file/folder pickers, drag-drop, and auto-restart of the receiver. | You want the **full desktop experience** (or to send files from computer → phone with a native picker). |
 
-Developers need Node.js 24 LTS and npm:
+Both start the same receiver; the desktop one just manages it for you.
 
-Use Node.js 24 LTS (`.nvmrc` selects the major version).
+## Run it
 
-```sh
-nvm install
-nvm use
-npm install --prefix receiver
-npm run dev
-```
-
-The receiver opens a browser on `127.0.0.1`. Its HTTPS transfer listener binds only to a private LAN IPv4 address, on port `57322` by default. Scan the displayed QR code with a compatible sender. The destination defaults to the system Downloads folder with `PhoneHaul` beneath it, and can be changed in the local UI. On Linux this honors `XDG_DOWNLOAD_DIR` or `user-dirs.dirs`; Windows uses the user's Downloads known-folder setting. Settings persist in `$XDG_CONFIG_HOME/phonehaul/` (Linux), `%APPDATA%/PhoneHaul/` (Windows), or `~/Library/Application Support/PhoneHaul/` (macOS). Set `PHONEHAUL_TRANSFER_PORT` before launching if that port is unavailable.
-
-### Build the desktop receiver
-
-Install the receiver dependencies once, then use these commands from the repository root:
-
-```sh
-npm install --prefix receiver
-npm run build             # bundle the Node receiver for inspection
-npm run package:sea       # standalone executable for the current OS/architecture
-npm run package:appimage  # Linux AppImage (also creates the SEA executable)
-npm test
-```
-
-SEA outputs go in `dist/` (for example, `dist/phonehaul-linux-x64`). `package:sea` packages only for the current host; build each release target on its matching OS and CPU. The Linux AppImage command also requires `appimagetool` on `PATH` or an `APPIMAGETOOL` path. If it cannot download its runtime automatically, download the matching `runtime-x86_64` or `runtime-aarch64` from [AppImage type2-runtime releases](https://github.com/AppImage/type2-runtime/releases) and set `APPIMAGE_RUNTIME` to that file. CI builds Linux x64/arm64 AppImages and SEA executables, macOS x64/arm64 Tauri DMGs, a Windows Tauri installer, and an Android debug APK with unit tests. Standalone Windows and macOS SEA jobs are commented out in favor of the Tauri packages. The Tauri DMG build still creates a receiver SEA sidecar inside each app. macOS x64 SEA support is experimental in Node.js, so the Intel Tauri job is best-effort.
-
-To build the Windows `.exe` locally, use a Windows machine (the SEA package embeds that machine's Node executable). Install Node.js 24 LTS and Git; no .NET or Android SDK is needed for the desktop receiver. In PowerShell, from the repository root, run:
-
-```powershell
-npm install --prefix receiver
-npm --prefix receiver run package:sea
-```
-
-The standalone file is `dist\phonehaul-windows-x64.exe` on Windows x64, or `dist\phonehaul-windows-arm64.exe` on Windows ARM64. It includes its Node runtime, so end users do not need Node installed. These can still be built locally; the Windows SEA jobs are temporarily commented out in GitHub Actions while the Tauri packaging path is being tested.
-
-The source workflow remains available with `npm run dev`. To smoke-test a generated SEA executable, run `npm run smoke:sea` after packaging it.
-
-### Build with helper scripts
-
-From the repository root on Linux, the scripts under `scripts/` select the Node version from `.nvmrc` with nvm (installing it if needed), install the receiver's locked npm dependencies, and run the selected build:
+**Standalone receiver (Linux):**
 
 ```sh
-./scripts/build-receiver.sh  # Node bundle for inspection
-./scripts/build-android.sh   # Debug APK and Android unit tests
-./scripts/build-appimage.sh  # Linux AppImage and embedded SEA executable
-./scripts/build-all.sh       # Bundle, Android APK/tests, then AppImage
+./PhoneHaul-x86_64.AppImage   # or the SEA executable: ./phonehaul-linux-x64
 ```
 
-Android builds need a JDK 17 and Android SDK 36. The Gradle wrapper reads `android/local.properties`, `ANDROID_HOME`, or `ANDROID_SDK_ROOT`. AppImage builds need `appimagetool` and the matching type 2 runtime; the script automatically uses `~/opt/appimagetool` and `~/opt/runtime-x86_64` (or `runtime-aarch64`) when present. Override those locations with `APPIMAGETOOL` and `APPIMAGE_RUNTIME` if needed.
+**Desktop app:** open its installer/AppImage/DMG. It starts the receiver
+automatically. See [docs/development.md](docs/development.md) for the full
+build matrix, environment variables, and per-platform notes.
 
-For development, obtain the QR URI from the rendered QR and run:
+## Troubleshooting
 
-```sh
-node integration-tests/fake-sender.js 'phonehaul://pair?v=1&h=...&p=...&s=...&f=...' /path/to/file
-```
+### Desktop app
 
-Run receiver tests with `npm test`.
+- **The receiver's LAN port changes between launches.** The desktop app runs
+  the receiver as a bundled sidecar with a **random** LAN port
+  (`PHONEHAUL_TRANSFER_PORT=0`), so it is not a fixed address like `:57322`.
+  Pairing always uses the QR code, which carries the current port — just scan
+  a fresh QR after restarting the app.
+- **Phone won't connect / QR stopped working.** QR codes expire after 5 minutes
+  and are re-generated on restart. Click **New QR** or relaunch the app.
+- **The desktop restarts the receiver for you.** The sidecar is killed when the
+  desktop exits and restarted on relaunch, so a stuck receiver is fixed by
+  relaunching the desktop app.
 
-### Connection troubleshooting
+### Standalone receiver
 
-If Android says the QR expired, scan the current code in the receiver browser. Unused QR sessions now refresh automatically every five minutes; restart an older running receiver to get this behavior.
+- **Fixed port `57322` (configurable via `PHONEHAUL_TRANSFER_PORT`).** If
+  your firewall blocks the receiver's port, allow **UDP/TCP 57322** (or whatever
+  `PHONEHAUL_TRANSFER_PORT` is set to) on the LAN. The standalone receiver does
+  **not** pick a random port — it uses this default unless you set it.
+  *Note: the desktop app always uses a random port, so firewall advice for a
+  fixed port applies only to the standalone receiver.*
+- **Auto-shutdown.** If no UI tab is open, the standalone receiver exits 15 s
+  after the last UI activity (controlled by `PHONEHAUL_EXIT_ON_UI_CLOSE`).
+  Keep a browser tab (or use the desktop app) if you want it to stay up.
+- **No `npm install` needed to run a release build.** The receiver ships as a
+  single SEA/AppImage file. The `npm ci` instructions in the docs are for
+  building from source only.
 
-The receiver terminal logs `device connected` after a successful handshake and `pairing rejected` for a stale or invalid QR. If neither appears when the phone tries to connect, check the LAN address and firewall first.
+## Documentation
 
-If Android cannot reach the displayed LAN address, check that the browser shows the expected computer IP, that both devices are on the same local network, and that the computer firewall allows incoming TCP on port `57322` (or the port shown in the browser). Guest Wi-Fi or client isolation can block device-to-device traffic even when both devices use the same Wi-Fi name. The localhost browser port is for the computer UI only; Android connects to the LAN HTTPS port in the QR.
-
-If Android reports a secure connection failure, restart the receiver and scan its new QR so the certificate fingerprint matches the current receiver process.
-
-## Build the Android app
-
-Open `android/` in Android Studio, or use the Gradle wrapper with an installed Android SDK:
-
-```sh
-cd android
-ANDROID_HOME=/path/to/Android/Sdk ./gradlew :app:assembleDebug :app:testDebugUnitTest
-```
-
-The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Install it on an Android 11 or newer phone. Start the receiver on the same local network, scan the QR, select files or a folder, and choose COPY or MOVE. MOVE is enabled only when selected files report deletion support. MediaStore photos and videos use Android's deletion confirmation after the receiver commits them.
-
-### Build a signed Android release in GitHub Actions
-
-In GitHub, open **Actions → Android signed release → Run workflow** to build the signed APK and Play app bundle from the current branch without changing the app version. Download the `phonehaul-android-release` artifact from that workflow run. The workflow also runs for `v*` tags. It requires the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`.
-
-## Status
-
-Implemented: local UI, QR sessions, ephemeral HTTPS certificate with QR fingerprint, streaming single-file uploads, manifest and path checks, disk preflight, conflict policies, partial files, SHA-256 verification, atomic file commit, cancellation endpoint, local progress events, persistent destination settings, and a native Android app with QR scanning, SAF and media selection, COPY, and per-file MOVE deletion. Computer → Android sending uses an ordered queue and Android MediaStore Downloads. Repeated phone → computer transfers merge into existing directories. Identical phone → computer files are detected by SHA-256 and skipped; different same-name files use the selected computer conflict policy. MOVE leaves source folders in place. Desktop SEA and Linux/Windows/macOS Tauri build scripts and CI are in place.
-
-Pending: public code signing/notarization, and device-level testing across Android storage providers. Android 11+ SAF restrictions still apply; some folders and provider-backed files cannot be selected or deleted. The app reports files that could not be deleted after transfer.
-
-See [protocol](docs/protocol.md), [security](docs/security.md), and [architecture](docs/architecture.md).
-# Desktop / Tauri development
-
-The desktop app lives in `desktop/` and builds for Linux, Windows, and macOS. It wraps the existing PhoneHaul Node receiver as a bundled sidecar; the transfer protocol, pairing, receive pipeline, disk-backed send queue, and configuration remain in `receiver/`. Rust supervises the sidecar, streams selected files into its existing send API, and forwards its SSE status updates to the small frontend. Linux uses XDG settings paths; Windows and macOS use their platform application data directories.
-
-## Debian setup
-
-Install Node.js 22 or newer and the Tauri Linux build dependencies:
-
-```sh
-sudo apt install build-essential curl wget file libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libldap2
-```
-
-Then install the project dependencies and run the desktop app:
-
-```sh
-npm --prefix desktop install
-npm run desktop:dev
-```
-
-Create Linux release bundles with:
-
-```sh
-npm --prefix desktop run build -- --bundles appimage
-```
-
-The build first creates a standalone Linux receiver executable and bundles it with Tauri. The AppImage is written under `desktop/src-tauri/target/release/bundle/appimage/`. Debian package generation is currently disabled because the AppImage is the Linux distribution target.
-
-## Windows build
-
-On Windows, install Node.js 24, the Rust stable toolchain, and NSIS. Run this from Git Bash (the build must run on Windows; Linux cross-compilation is not supported):
-
-```sh
-bash scripts/build-desktop-windows.sh
-```
-
-The script installs the locked Node dependencies, builds the Windows receiver sidecar and Tauri NSIS installer, then prints the installer path under `desktop/src-tauri/target/release/bundle/nsis/`. The installer is currently unsigned. GitHub Actions uses the same script and uploads the NSIS installer as the `phonehaul-desktop-windows` workflow artifact.
-
-### Microsoft Store MSIX
-
-The Windows GitHub Actions job can also package the built Tauri app and receiver sidecar as an **unsigned MSIX** for Microsoft Store submission. Set these repository **Actions variables** to the exact values shown under **App identity** in Partner Center:
-
-- `MSIX_IDENTITY_NAME`: Package/Identity/Name.
-- `MSIX_PUBLISHER`: Package/Identity/Publisher, including the full `CN=...` distinguished name.
-- `MSIX_PUBLISHER_DISPLAY_NAME`: Your publisher display name (optional; defaults to `PhoneHaul`).
-- `MSIX_VERSION`: Four-part Store package version (optional; defaults to `1.0.0.0`). Increase it for every Store update; the last part must remain `0`.
-
-When the first two variables are set, the `phonehaul-desktop-windows` artifact also contains `PhoneHaul_<version>_x64.msix`. Upload that MSIX in Partner Center. Microsoft signs MSIX packages submitted through the Store; the NSIS `.exe` is a separate, unsigned installer and does not receive Store signing. To build locally on Windows after `bash scripts/build-desktop-windows.sh`, set the same environment variables and run `npm --prefix desktop run package:msix`. The MSIX goes to `dist/msix/`.
-
-## macOS build
-
-On an Intel or Apple Silicon Mac, install Node.js 24, Xcode Command Line Tools, and the Rust stable toolchain. Run from the repository root:
-
-```sh
-./scripts/build-desktop-macos.sh
-```
-
-The script installs the locked Node dependencies, builds a native receiver sidecar and Tauri DMG, then prints the disk image path under `desktop/src-tauri/target/release/bundle/dmg/`. GitHub Actions builds separate Intel and Apple Silicon DMGs as `phonehaul-desktop-macos-x64` and `phonehaul-desktop-macos-arm64` artifacts. The receiver sidecar gets an ad hoc signature so macOS can execute it; the app and DMG still need Developer ID signing and notarization before public distribution. Node.js marks its macOS x64 SEA support as experimental, so the Intel CI build is best-effort.
-
-The app starts the receiver automatically, shuts it down when the desktop process exits, provides native receive-directory and send-file pickers, and displays receiver, phone, transfer, and queue status. System tray support, folder selection in the desktop send UI, and restart controls remain follow-up work.
+- [Developer guide — builds, release, env vars, settings](docs/development.md)
+- [Protocol](docs/protocol.md)
+- [Security model](docs/security.md)
+- [Architecture](docs/architecture.md)
+- [Rules for contributors / AI agents](AGENTS.md)
