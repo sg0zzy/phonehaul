@@ -8,7 +8,7 @@ This section is the restart point. Check an item only after the change and its r
 - [ ] Phase 1 — Hygiene and tooling baseline.
   - [x] Remove stray and generated tracked files; complete ignore rules.
   - [x] Add JS formatting, linting, and a root `check` command; format the code.
-  - [ ] Keep the mechanical formatting change in its own commit and add its revision to `.git-blame-ignore-revs` when committing.
+  - [x] Keep the mechanical formatting change in its own commit and add its revision to `.git-blame-ignore-revs` when committing.
   - [x] Add Android ktlint and lint gates.
   - [x] Add Rust format, Clippy, and test gates to CI; normalize npm installs.
   - [x] Pin `.nvmrc` to Node 24.21.0 for repeatable packaged builds.
@@ -23,7 +23,7 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Move the Android media deletion result into the ViewModel and handle Back during transfer.
   - [ ] Verify MOVE with a rotation during the system dialog on a device or emulator (none attached locally).
   - [x] Add certificate pinning and MOVE decision tests.
-  - [ ] Investigate hard link failure on exFAT and fix if confirmed. Microsoft documents that exFAT and FAT32 do not support hard links, but a mounted upload repro and fallback test remain.
+  - [x] Investigate hard link failure on exFAT and fix if confirmed. Microsoft documents that exFAT and FAT32 do not support hard links; confirmed EPERM on a mounted exFAT image. Added `TransferReceiver.upload()` fallback committing via `rename` when `link()` is unsupported, with unit tests (link-failure and race/no-clobber). Real exFAT mount E2E verified PASS.
   - [x] Test the protocol vector and correct schema drift.
   - [x] Fix Rust UTF-8 streaming, with a split-byte regression test.
   - [x] Fix the AppImage ARM path and Android release version code.

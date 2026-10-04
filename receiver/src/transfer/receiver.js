@@ -249,10 +249,52 @@ export class TransferReceiver {
       } finally {
         await file.close();
       }
-      if (choice.replace) await rename(partial, choice.target);
-      else {
-        await link(partial, choice.target);
-        await unlink(partial);
+      let committedTarget = choice.target;
+      if (choice.replace) {
+        await rename(partial, committedTarget);
+      } else {
+        let target = committedTarget;
+        try {
+          await link(partial, target);
+          await unlink(partial);
+        } catch (linkError) {
+          if (
+            linkError.code !== 'ENOTSUP' &&
+            linkError.code !== 'EPERM' &&
+            linkError.code !== 'EXDEV'
+          ) {
+            throw linkError;
+          }
+          // Filesystem does not support hard links (exFAT, FAT32): reserve
+          // the target (open 'wx' fails with EEXIST if it exists, so re-run
+          // chooseTarget), then commit with rename.
+          for (let attempts = 0; attempts < 100; attempts++) {
+            try {
+              const reserved = await open(target, 'wx');
+              await reserved.close();
+              break;
+            } catch (reserveError) {
+              if (reserveError.code !== 'EEXIST') {
+                throw reserveError;
+              }
+              if (attempts === 99) {
+                throw new Error('Too many filename conflicts', {
+                  cause: reserveError,
+                });
+              }
+              const retry = await chooseTarget(parent, name, this.settings.conflict);
+              if (retry.skipped) {
+                await unlink(partial);
+                item.status = 'skipped';
+                this.emit();
+                return { status: 'skipped' };
+              }
+              target = retry.target;
+            }
+          }
+          await rename(partial, target);
+          committedTarget = target;
+        }
       }
       try {
         const dir = await open(parent, 'r');
@@ -265,9 +307,9 @@ export class TransferReceiver {
         /* directory sync is unavailable on some systems */
       }
       item.status = 'committed';
-      item.destination = choice.target;
+      item.destination = committedTarget;
       t.completedItems++;
-      return { status: 'committed', size: bytes, sha256: digest, destination: choice.target };
+      return { status: 'committed', size: bytes, sha256: digest, destination: committedTarget };
     } catch (error) {
       item.status = 'failed';
       t.receivedBytes -= bytes;
