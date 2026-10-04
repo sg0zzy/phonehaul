@@ -13,24 +13,24 @@ jobs:
     name: Android debug APK and tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version-file: .nvmrc
       - name: Verify Node.js version
         run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
       - name: Install Android SDK platform
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Build APK and run unit tests
         working-directory: android
         run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: phonehaul-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -49,8 +49,8 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version-file: .nvmrc
       - name: Verify Node.js version
@@ -59,15 +59,28 @@ jobs:
         run: npm ci --prefix receiver
       - name: Run receiver tests
         run: npm --prefix receiver test
-      - name: Install AppImage tooling
+      - name: Install AppImage tooling (pinned)
         shell: bash
         run: |
+          set -euo pipefail
           case "${{ matrix.arch }}" in
             x64) APPIMAGE_ARCH=x86_64 ;;
             arm64) APPIMAGE_ARCH=aarch64 ;;
           esac
-          curl --fail --location "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage" --output "$RUNNER_TEMP/appimagetool"
-          curl --fail --location "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${APPIMAGE_ARCH}" --output "$RUNNER_TEMP/appimage-runtime"
+          curl --fail --location "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${APPIMAGE_ARCH}.AppImage" --output "$RUNNER_TEMP/appimagetool"
+          curl --fail --location "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${APPIMAGE_ARCH}" --output "$RUNNER_TEMP/appimage-runtime"
+          case "${APPIMAGE_ARCH}" in
+            x86_64)
+              expected_tool=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+              expected_runtime=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+              ;;
+            aarch64)
+              expected_tool=f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+              expected_runtime=00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+              ;;
+          esac
+          sha256sum -c <<< "$expected_tool  $RUNNER_TEMP/appimagetool"
+          sha256sum -c <<< "$expected_runtime  $RUNNER_TEMP/appimage-runtime"
           chmod +x "$RUNNER_TEMP/appimagetool"
           chmod +x "$RUNNER_TEMP/appimage-runtime"
           echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
@@ -78,7 +91,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: '1'
       - name: Smoke test standalone executable
         run: npm --prefix receiver run smoke:sea
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: phonehaul-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
@@ -119,15 +132,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.platform == 'macos-intel' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: |
             desktop/package-lock.json
             receiver/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
         with:
           components: clippy, rustfmt
       - name: Install Linux Tauri dependencies
@@ -202,7 +215,7 @@ jobs:
       - name: Smoke test macOS receiver sidecar
         if: startsWith(matrix.platform, 'macos-')
         run: npm --prefix receiver run smoke:sea
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: ${{ matrix.artifact-name }}
           path: |
