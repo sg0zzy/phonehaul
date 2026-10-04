@@ -10,20 +10,24 @@ if (keystorePropertiesFile.exists()) {
 
 // CI can provide the same signing values as environment variables. Local builds
 // continue to use ~/.secrets/android/phonehaul/keystore.properties.
-val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
-    ?: (keystoreProperties["storeFile"] as? String)
-val releaseStorePassword = System.getenv("ANDROID_STORE_PASSWORD")
-    ?: (keystoreProperties["storePassword"] as? String)
-val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
-    ?: (keystoreProperties["keyAlias"] as? String)
-val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-    ?: (keystoreProperties["keyPassword"] as? String)
-
+val releaseStoreFile =
+    System.getenv("ANDROID_KEYSTORE_FILE")
+        ?: (keystoreProperties["storeFile"] as? String)
+val releaseStorePassword =
+    System.getenv("ANDROID_STORE_PASSWORD")
+        ?: (keystoreProperties["storePassword"] as? String)
+val releaseKeyAlias =
+    System.getenv("ANDROID_KEY_ALIAS")
+        ?: (keystoreProperties["keyAlias"] as? String)
+val releaseKeyPassword =
+    System.getenv("ANDROID_KEY_PASSWORD")
+        ?: (keystoreProperties["keyPassword"] as? String)
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jlleitschuh.gradle.ktlint")
 }
 
 android {
@@ -34,7 +38,7 @@ android {
         applicationId = "org.phonehaul.app"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -46,26 +50,28 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
 
-signingConfigs {
-    create("release") {
-        if (releaseStoreFile != null && releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null) {
-            storeFile = file(releaseStoreFile)
-            storePassword = releaseStorePassword
-            keyAlias = releaseKeyAlias
-            keyPassword = releaseKeyPassword
+    lint {
+        abortOnError = true
+        baseline = file("lint-baseline.xml")
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseStoreFile != null && releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null) {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
-}
 
-buildTypes {
-    release {
-        signingConfig = signingConfigs.getByName("release")
-        isMinifyEnabled = false
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
-}
-
-
-
 }
 
 dependencies {

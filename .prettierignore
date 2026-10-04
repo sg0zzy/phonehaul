@@ -1,0 +1,6 @@
+**/package-lock.json
+desktop/src-tauri/gen/
+desktop/src-tauri/target/
+desktop/frontend-dist/
+receiver/.build/
+dist/

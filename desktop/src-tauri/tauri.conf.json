@@ -4,14 +4,28 @@
   "version": "0.1.0",
   "identifier": "org.phonehaul.desktop",
   "build": {
-    "beforeDevCommand": { "script": "npm run build:sidecar && npm run frontend:dev", "wait": false },
+    "beforeDevCommand": {
+      "script": "npm run build:sidecar && npm run frontend:dev",
+      "wait": false
+    },
     "beforeBuildCommand": "npm run frontend:build && npm run build:sidecar && npm run stage:appimage-libraries",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../frontend-dist"
   },
   "app": {
-    "windows": [{ "title": "PhoneHaul", "width": 580, "height": 750, "minWidth": 420, "minHeight": 520, "center": true }],
-    "security": { "csp": "default-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
+    "windows": [
+      {
+        "title": "PhoneHaul",
+        "width": 580,
+        "height": 750,
+        "minWidth": 420,
+        "minHeight": 520,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
   },
   "bundle": {
     "active": true,

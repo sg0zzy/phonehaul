@@ -1,6 +1,7 @@
 {
   "name": "phonehaul",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "npm --prefix receiver run dev",
     "test": "npm --prefix receiver test",
@@ -11,6 +12,17 @@
     "dist": "npm run package:sea",
     "smoke:sea": "npm --prefix receiver run smoke:sea",
     "desktop:dev": "npm --prefix desktop run dev",
-    "desktop:build": "npm --prefix desktop run build"
+    "desktop:build": "npm --prefix desktop run build",
+    "format": "prettier --write \"{receiver,desktop,integration-tests}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
+    "check:format": "prettier --check \"{receiver,desktop,integration-tests}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
+    "lint": "eslint receiver desktop integration-tests",
+    "smoke": "node integration-tests/smoke.js",
+    "check": "npm run check:format && npm run lint && npm test && npm run smoke"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9"
   }
 }

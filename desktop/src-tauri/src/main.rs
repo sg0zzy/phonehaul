@@ -9,7 +9,7 @@ use std::{
     io::{BufRead, BufReader},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{mpsc, Arc, Mutex, OnceLock},
     time::Duration,
 };
 use tauri::{Emitter, Manager, State};
@@ -24,6 +24,26 @@ struct Service {
     error: Option<String>,
 }
 type Shared = Arc<Mutex<Service>>;
+
+fn http_client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .expect("local HTTP client")
+    })
+}
+
+#[cfg(debug_assertions)]
+fn server_override() -> Option<PathBuf> {
+    std::env::var_os("PHONEHAUL_SERVER_BIN").map(PathBuf::from)
+}
+
+#[cfg(not(debug_assertions))]
+fn server_override() -> Option<PathBuf> {
+    None
+}
 
 fn drain_stdout<R, F>(reader: R, mut on_line: F) -> std::thread::JoinHandle<()>
 where
@@ -76,8 +96,8 @@ fn server_status(service: &mut Service) -> ServerStatus {
     }
 }
 fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
-    let bin = if let Some(path) = std::env::var_os("PHONEHAUL_SERVER_BIN") {
-        PathBuf::from(path)
+    let bin = if let Some(path) = server_override() {
+        path
     } else {
         let root = app.path().resource_dir().unwrap_or_default();
         #[cfg(target_os = "windows")]
@@ -107,6 +127,7 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
         .env("PHONEHAUL_DESKTOP_MANAGED", "1")
         .env("PHONEHAUL_NO_BROWSER", "1")
         .env("PHONEHAUL_TRANSFER_PORT", "0")
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
     #[cfg(target_os = "windows")]
@@ -121,43 +142,66 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
         .spawn()
         .map_err(|e| format!("Could not start server: {e}"))?;
     let stdout = child.stdout.take().ok_or("Could not read server startup")?;
-    let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
-    loop {
-        line.clear();
-        if reader.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
-            let status = child.wait().ok();
-            return Err(format!(
-                "PhoneHaul server exited during startup ({status:?})"
-            ));
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => {
+                    let _ =
+                        ready_tx.send(Err("PhoneHaul server exited during startup".to_string()));
+                    return;
+                }
+                Err(error) => {
+                    let _ = ready_tx.send(Err(error.to_string()));
+                    return;
+                }
+                Ok(_) => {
+                    if let Some(data) = line.strip_prefix("PHONEHAUL_READY ") {
+                        let _ = ready_tx.send(Ok(data.to_string()));
+                        break;
+                    }
+                    eprintln!("[PhoneHaul server] {}", line.trim_end());
+                }
+            }
         }
-        if let Some(data) = line.strip_prefix("PHONEHAUL_READY ") {
-            let ready: Value = serde_json::from_str(data).map_err(|e| e.to_string())?;
-            let root = ready["uiUrl"]
-                .as_str()
-                .ok_or("Server startup response missing URL")?
-                .trim_end_matches('/')
-                .to_string();
-            let host = ready["host"].as_str().unwrap_or("0.0.0.0").to_string();
-            let port = ready["port"].as_u64().unwrap_or(0) as u16;
-            // Keep consuming the sidecar's stdout after its ready message. Leaving this
-            // pipe unread makes later Node console.log calls fail with EPIPE and kills
-            // the receiver when a phone connects or a transfer starts.
-            let _log_reader = drain_stdout(reader, |line| eprintln!("[PhoneHaul server] {line}"));
-            return Ok(Service {
-                child: Some(child),
-                root,
-                host,
-                port,
-                error: None,
-            });
+        // Continue consuming logs so the sidecar never blocks on a full stdout pipe.
+        let _log_reader = drain_stdout(reader, |line| eprintln!("[PhoneHaul server] {line}"));
+    });
+    let ready_data = match ready_rx.recv_timeout(Duration::from_secs(30)) {
+        Ok(Ok(data)) => data,
+        Ok(Err(error)) => {
+            let _ = child.wait();
+            return Err(error);
         }
-    }
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("PhoneHaul server startup timed out".into());
+        }
+    };
+    let ready: Value = serde_json::from_str(&ready_data).map_err(|e| e.to_string())?;
+    let root = ready["uiUrl"]
+        .as_str()
+        .ok_or("Server startup response missing URL")?
+        .trim_end_matches('/')
+        .to_string();
+    let host = ready["host"].as_str().unwrap_or("0.0.0.0").to_string();
+    let port = ready["port"].as_u64().unwrap_or(0) as u16;
+    Ok(Service {
+        child: Some(child),
+        root,
+        host,
+        port,
+        error: None,
+    })
 }
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::drain_stdout;
+    use super::{drain_stdout, take_sse_events};
     use std::{
         io::{BufReader, Write},
         os::unix::net::UnixStream,
@@ -184,6 +228,17 @@ mod tests {
 
         assert_eq!(read_count.load(Ordering::Relaxed), 4096);
     }
+
+    #[test]
+    fn event_decoder_preserves_multibyte_text_split_across_chunks() {
+        let payload = "data: {\"destination\":\"Café\"}\n\n";
+        let bytes = payload.as_bytes();
+        let split = bytes.iter().position(|byte| *byte == 0xc3).unwrap() + 1;
+        let mut buffer = Vec::new();
+        assert!(take_sse_events(&mut buffer, &bytes[..split]).is_empty());
+        let events = take_sse_events(&mut buffer, &bytes[split..]);
+        assert_eq!(events[0]["destination"], "Café");
+    }
 }
 async fn request_json(
     client: &Client,
@@ -192,7 +247,9 @@ async fn request_json(
     path: &str,
     body: Option<Value>,
 ) -> Result<Value, String> {
-    let mut req = client.request(method, format!("{root}{path}"));
+    let mut req = client
+        .request(method, format!("{root}{path}"))
+        .timeout(Duration::from_secs(10));
     if let Some(b) = body {
         req = req.json(&b);
     }
@@ -207,6 +264,27 @@ async fn request_json(
     }
     Ok(value)
 }
+
+async fn running_root(client: &Client, local_root: &str, lan_root: &str) -> bool {
+    // Reachability check before issuing any command: the local root first,
+    // then the LAN UI when that host is unavailable.
+    if client
+        .get(local_root)
+        .send()
+        .await
+        .ok()
+        .is_some_and(|response| response.status().is_success())
+    {
+        return true;
+    }
+    client
+        .get(lan_root)
+        .send()
+        .await
+        .ok()
+        .is_some_and(|response| response.status().is_success())
+}
+
 #[tauri::command]
 async fn get_status(service: State<'_, Shared>) -> Result<Value, String> {
     let (status, root) = {
@@ -216,20 +294,20 @@ async fn get_status(service: State<'_, Shared>) -> Result<Value, String> {
     if !status.running {
         return Ok(json!({"server":status}));
     }
-    let ui = request_json(&Client::new(), &root, reqwest::Method::GET, "/api/ui", None).await?;
+    let ui = request_json(http_client(), &root, reqwest::Method::GET, "/api/ui", None).await?;
     Ok(json!({"server":status,"ui":ui}))
 }
 #[tauri::command]
 async fn refresh_qr(service: State<'_, Shared>) -> Result<(), String> {
-    let (root, live) = {
-        let mut s = service.lock().unwrap();
-        (s.root.clone(), running(&mut s))
+    let (root, host, port) = {
+        let s = service.lock().unwrap();
+        (s.root.clone(), s.host.clone(), s.port)
     };
-    if !live {
+    if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
         return Err("PhoneHaul server is stopped".into());
     }
     request_json(
-        &Client::new(),
+        http_client(),
         &root,
         reqwest::Method::POST,
         "/api/qr/refresh",
@@ -255,18 +333,18 @@ async fn set_destination(app: tauri::AppHandle, service: State<'_, Shared>) -> R
     if !p.is_dir() {
         return Err("Destination must be an existing directory".into());
     }
-    let (root, live) = {
-        let mut s = service.lock().unwrap();
-        (s.root.clone(), running(&mut s))
+    let (root, host, port) = {
+        let s = service.lock().unwrap();
+        (s.root.clone(), s.host.clone(), s.port)
     };
-    if !live {
+    if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
         return Err("PhoneHaul server is stopped".into());
     }
-    let client = Client::new();
-    let current = request_json(&client, &root, reqwest::Method::GET, "/api/ui", None).await?;
+    let client = http_client();
+    let current = request_json(client, &root, reqwest::Method::GET, "/api/ui", None).await?;
     let conflict = current["settings"]["conflict"].as_str().unwrap_or("rename");
     request_json(
-        &client,
+        client,
         &root,
         reqwest::Method::POST,
         "/api/settings",
@@ -308,11 +386,11 @@ async fn queue_paths(
     paths: Vec<PathBuf>,
     allow_directories: bool,
 ) -> Result<usize, String> {
-    let (root, live) = {
-        let mut service = service.lock().unwrap();
-        (service.root.clone(), running(&mut service))
+    let (root, host, port) = {
+        let service = service.lock().unwrap();
+        (service.root.clone(), service.host.clone(), service.port)
     };
-    if !live {
+    if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
         return Err("PhoneHaul server is stopped".into());
     }
 
@@ -381,7 +459,7 @@ async fn queue_paths(
     if files.is_empty() {
         return Ok(0);
     }
-    let client = Client::new();
+    let client = http_client();
     for (file_path, relative) in &files {
         let meta = tokio::fs::metadata(file_path)
             .await
@@ -394,6 +472,7 @@ async fn queue_paths(
             .map_err(|e| format!("Could not open {}: {e}", file_path.display()))?;
         let response = client
             .post(format!("{root}/api/send/items"))
+            .timeout(Duration::from_secs(6 * 60 * 60))
             .header(header::CONTENT_LENGTH, meta.len())
             .header(
                 "X-PhoneHaul-Relative-Path",
@@ -414,9 +493,25 @@ async fn queue_paths(
     }
     Ok(files.len())
 }
+fn take_sse_events(buffer: &mut Vec<u8>, chunk: &[u8]) -> Vec<Value> {
+    buffer.extend_from_slice(chunk);
+    let mut events = Vec::new();
+    while let Some(pos) = buffer.windows(2).position(|window| window == b"\n\n") {
+        let event = &buffer[..pos];
+        let data = event
+            .split(|byte| *byte == b'\n')
+            .find_map(|line| line.strip_prefix(b"data: "));
+        if let Some(value) = data.and_then(|bytes| serde_json::from_slice(bytes).ok()) {
+            events.push(value);
+        }
+        buffer.drain(..pos + 2);
+    }
+    events
+}
+
 fn start_events(app: tauri::AppHandle, shared: Shared) {
     tauri::async_runtime::spawn(async move {
-        let client = Client::new();
+        let client = http_client();
         loop {
             let (root, live) = {
                 let mut s = shared.lock().unwrap();
@@ -426,23 +521,14 @@ fn start_events(app: tauri::AppHandle, shared: Shared) {
                 if let Ok(response) = client.get(format!("{root}/api/events")).send().await {
                     let mut stream = response.bytes_stream();
                     use futures_util::StreamExt;
-                    let mut buffer = String::new();
+                    let mut buffer = Vec::new();
                     while let Some(Ok(bytes)) = stream.next().await {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        while let Some(pos) = buffer.find("\n\n") {
-                            let event = buffer[..pos]
-                                .lines()
-                                .find_map(|line| line.strip_prefix("data: "));
-                            if let Some(data) =
-                                event.and_then(|s| serde_json::from_str::<Value>(s).ok())
-                            {
-                                let (host, port) = {
-                                    let s = shared.lock().unwrap();
-                                    (s.host.clone(), s.port)
-                                };
-                                let _=app.emit("phonehaul://status",json!({"server":{"running":true,"host":host,"port":port},"ui":data}));
-                            }
-                            buffer.drain(..pos + 2);
+                        for data in take_sse_events(&mut buffer, &bytes) {
+                            let (host, port) = {
+                                let s = shared.lock().unwrap();
+                                (s.host.clone(), s.port)
+                            };
+                            let _=app.emit("phonehaul://status",json!({"server":{"running":true,"host":host,"port":port},"ui":data}));
                         }
                     }
                 }

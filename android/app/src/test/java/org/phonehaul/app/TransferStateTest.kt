@@ -1,33 +1,72 @@
 package org.phonehaul.app
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class TransferStateTest {
+    @Test fun deletionRequiresVerifiedDestination() {
+        assertEquals(true, canDeleteSource(FileState.COMMITTED))
+        assertEquals(true, canDeleteSource(FileState.ALREADY_PRESENT))
+        for (state in listOf(FileState.SKIPPED, FileState.TRANSFER_FAILED)) {
+            assertEquals(false, canDeleteSource(state))
+        }
+    }
+
     @Test fun moveRequiresCommitBeforeDeletion() {
         val file = FileTransition()
         assertThrows(IllegalArgumentException::class.java) { file.to(FileState.DELETING_SOURCE) }
-        listOf(FileState.QUEUED, FileState.SENDING, FileState.SENT, FileState.VERIFYING, FileState.COMMITTED, FileState.DELETING_SOURCE, FileState.MOVED).forEach(file::to)
+        listOf(
+            FileState.QUEUED,
+            FileState.SENDING,
+            FileState.SENT,
+            FileState.VERIFYING,
+            FileState.COMMITTED,
+            FileState.DELETING_SOURCE,
+            FileState.MOVED,
+        ).forEach(file::to)
         assertEquals(FileState.MOVED, file.state)
     }
 
     @Test fun deletionFailureKeepsCommittedDestinationState() {
         val file = FileTransition()
-        listOf(FileState.QUEUED, FileState.SENDING, FileState.SENT, FileState.VERIFYING, FileState.COMMITTED, FileState.DELETING_SOURCE, FileState.DELETE_FAILED).forEach(file::to)
+        listOf(
+            FileState.QUEUED,
+            FileState.SENDING,
+            FileState.SENT,
+            FileState.VERIFYING,
+            FileState.COMMITTED,
+            FileState.DELETING_SOURCE,
+            FileState.DELETE_FAILED,
+        ).forEach(file::to)
         assertEquals(FileState.DELETE_FAILED, file.state)
     }
 
     @Test fun copyNeverEntersSourceDeletion() {
         val file = FileTransition()
-        listOf(FileState.QUEUED, FileState.SENDING, FileState.SENT, FileState.VERIFYING, FileState.COMMITTED, FileState.COPIED).forEach(file::to)
+        listOf(
+            FileState.QUEUED,
+            FileState.SENDING,
+            FileState.SENT,
+            FileState.VERIFYING,
+            FileState.COMMITTED,
+            FileState.COPIED,
+        ).forEach(file::to)
         assertEquals(FileState.COPIED, file.state)
         assertThrows(IllegalArgumentException::class.java) { file.to(FileState.DELETING_SOURCE) }
     }
 
     @Test fun streamedDuplicateCanBeMovedAfterVerification() {
         val file = FileTransition()
-        listOf(FileState.QUEUED, FileState.SENDING, FileState.SENT, FileState.VERIFYING, FileState.ALREADY_PRESENT, FileState.DELETING_SOURCE, FileState.MOVED).forEach(file::to)
+        listOf(
+            FileState.QUEUED,
+            FileState.SENDING,
+            FileState.SENT,
+            FileState.VERIFYING,
+            FileState.ALREADY_PRESENT,
+            FileState.DELETING_SOURCE,
+            FileState.MOVED,
+        ).forEach(file::to)
         assertEquals(FileState.MOVED, file.state)
     }
-
 }

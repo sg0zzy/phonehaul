@@ -16,6 +16,6 @@ await build({
   format: 'cjs',
   target: 'node22',
   sourcemap: false,
-  legalComments: 'none'
+  legalComments: 'none',
 });
 console.log(`Bundled receiver: ${outfile}`);

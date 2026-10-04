@@ -8,16 +8,30 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const assets = path.join(root, 'desktop/msix/Assets');
 
 function xml(value) {
-  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll("'", '&apos;');
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll("'", '&apos;');
 }
 
 export function manifest({ name, publisher, publisherDisplayName, version, arch }) {
-  if (!/^[A-Za-z0-9.-]{3,50}$/.test(name)) throw new Error('MSIX_IDENTITY_NAME must be a 3–50 character Partner Center package name.');
-  if (!publisher || !publisher.startsWith('CN=')) throw new Error('MSIX_PUBLISHER must be the full Publisher distinguished name from Partner Center.');
+  if (!/^[A-Za-z0-9.-]{3,50}$/.test(name))
+    throw new Error('MSIX_IDENTITY_NAME must be a 3–50 character Partner Center package name.');
+  if (!publisher || !publisher.startsWith('CN='))
+    throw new Error(
+      'MSIX_PUBLISHER must be the full Publisher distinguished name from Partner Center.',
+    );
   const parts = version.split('.').map(Number);
-  if (!/^\d+\.\d+\.\d+\.0$/.test(version) || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 65535) || parts[0] === 0) {
-    throw new Error('MSIX_VERSION must be four numbers such as 1.0.0.0, with a nonzero first and zero last number.');
+  if (
+    !/^\d+\.\d+\.\d+\.0$/.test(version) ||
+    parts.some((n) => !Number.isInteger(n) || n < 0 || n > 65535) ||
+    parts[0] === 0
+  ) {
+    throw new Error(
+      'MSIX_VERSION must be four numbers such as 1.0.0.0, with a nonzero first and zero last number.',
+    );
   }
   if (!['x64', 'arm64'].includes(arch)) throw new Error(`Unsupported MSIX architecture: ${arch}`);
   return `<?xml version="1.0" encoding="utf-8"?>
@@ -48,9 +62,16 @@ export function manifest({ name, publisher, publisherDisplayName, version, arch 
 }
 
 async function findMakeAppx() {
-  const sdkBin = path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Windows Kits', '10', 'bin');
-  const versions = (await readdir(sdkBin, { withFileTypes: true })).filter((item) => item.isDirectory())
-    .map((item) => item.name).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  const sdkBin = path.join(
+    process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
+    'Windows Kits',
+    '10',
+    'bin',
+  );
+  const versions = (await readdir(sdkBin, { withFileTypes: true }))
+    .filter((item) => item.isDirectory())
+    .map((item) => item.name)
+    .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   for (const version of versions) {
     const candidate = path.join(sdkBin, version, 'x64', 'makeappx.exe');
     if (existsSync(candidate)) return candidate;
@@ -63,7 +84,10 @@ async function main() {
   const arch = { x64: 'x64', arm64: 'arm64' }[process.arch];
   const name = process.env.MSIX_IDENTITY_NAME;
   const publisher = process.env.MSIX_PUBLISHER;
-  if (!name || !publisher) throw new Error('Set MSIX_IDENTITY_NAME and MSIX_PUBLISHER to the exact values from Partner Center.');
+  if (!name || !publisher)
+    throw new Error(
+      'Set MSIX_IDENTITY_NAME and MSIX_PUBLISHER to the exact values from Partner Center.',
+    );
   const version = process.env.MSIX_VERSION || '1.0.0.0';
   const publisherDisplayName = process.env.MSIX_PUBLISHER_DISPLAY_NAME || 'PhoneHaul';
   const content = manifest({ name, publisher, publisherDisplayName, version, arch });
@@ -71,7 +95,8 @@ async function main() {
   const stage = path.join(outputDir, 'stage');
   const exe = path.join(root, 'desktop/src-tauri/target/release/phonehaul-desktop.exe');
   const sidecar = path.join(root, 'desktop/src-tauri/resources/phonehaul-server.exe');
-  if (!existsSync(exe) || !existsSync(sidecar)) throw new Error('Build the Windows Tauri app before packaging MSIX.');
+  if (!existsSync(exe) || !existsSync(sidecar))
+    throw new Error('Build the Windows Tauri app before packaging MSIX.');
 
   await rm(stage, { recursive: true, force: true });
   await mkdir(path.join(stage, 'Assets'), { recursive: true });
@@ -83,10 +108,15 @@ async function main() {
   }
   await writeFile(path.join(stage, 'AppxManifest.xml'), content);
   const output = path.join(outputDir, `PhoneHaul_${version}_${arch}.msix`);
-  execFileSync(await findMakeAppx(), ['pack', '/d', stage, '/p', output, '/o'], { stdio: 'inherit' });
+  execFileSync(await findMakeAppx(), ['pack', '/d', stage, '/p', output, '/o'], {
+    stdio: 'inherit',
+  });
   console.log(`Unsigned Microsoft Store MSIX: ${output}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => { console.error(error); process.exitCode = 1; });
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }

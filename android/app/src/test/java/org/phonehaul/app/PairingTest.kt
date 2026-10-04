@@ -1,12 +1,21 @@
 package org.phonehaul.app
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PairingTest {
     private val token = "a".repeat(43)
     private val fingerprint = "b".repeat(64)
+
     private fun uri(host: String) = "phonehaul://pair?v=1&h=$host&p=57322&s=$token&f=$fingerprint"
+
+    @Test fun pairingToStringRedactsToken() {
+        val pairing = PairingParser.parse(uri("192.168.1.20"))
+        assertFalse(pairing.toString().contains(token))
+    }
 
     @Test fun acceptsPrivateLanAddress() {
         assertEquals("192.168.1.20", PairingParser.parse(uri("192.168.1.20")).host)

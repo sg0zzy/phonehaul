@@ -15,10 +15,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
@@ -29,7 +29,10 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
-fun QrScanner(onFound: (String) -> Unit, onError: (String) -> Unit) {
+fun QrScanner(
+    onFound: (String) -> Unit,
+    onError: (String) -> Unit,
+) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
@@ -40,38 +43,60 @@ fun QrScanner(onFound: (String) -> Unit, onError: (String) -> Unit) {
         val disposed = AtomicBoolean(false)
         val providerFuture = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
-        val listener = Runnable {
-            try {
-                if (disposed.get()) return@Runnable
-                provider = providerFuture.get()
-                val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
-                analysis.setAnalyzer(executor) { image ->
-                    try {
-                        if (!found.get()) {
-                            val data = luminance(image)
-                            val reader = MultiFormatReader().apply {
-                                setHints(EnumMap<DecodeHintType, Any>(DecodeHintType::class.java).apply {
-                                    put(DecodeHintType.POSSIBLE_FORMATS, listOf(com.google.zxing.BarcodeFormat.QR_CODE))
-                                    put(DecodeHintType.TRY_HARDER, true)
-                                })
+        val listener =
+            Runnable {
+                try {
+                    if (disposed.get()) return@Runnable
+                    provider = providerFuture.get()
+                    val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+                    val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+                    analysis.setAnalyzer(executor) { image ->
+                        try {
+                            if (!found.get()) {
+                                val data = luminance(image)
+                                val reader =
+                                    MultiFormatReader().apply {
+                                        setHints(
+                                            EnumMap<DecodeHintType, Any>(DecodeHintType::class.java).apply {
+                                                put(DecodeHintType.POSSIBLE_FORMATS, listOf(com.google.zxing.BarcodeFormat.QR_CODE))
+                                                put(DecodeHintType.TRY_HARDER, true)
+                                            },
+                                        )
+                                    }
+                                val source =
+                                    PlanarYUVLuminanceSource(data, image.width, image.height, 0, 0, image.width, image.height, false)
+                                val decoded = reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
+                                PairingParser.parse(decoded)
+                                if (found.compareAndSet(false, true)) main.post { onFound(decoded) }
                             }
-                            val source = PlanarYUVLuminanceSource(data, image.width, image.height, 0, 0, image.width, image.height, false)
-                            val decoded = reader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
-                            PairingParser.parse(decoded)
-                            if (found.compareAndSet(false, true)) main.post { onFound(decoded) }
+                        } catch (
+                            _: com.google.zxing.NotFoundException,
+                        ) {
+                            // Next frame
+                        } catch (
+                            e: IllegalArgumentException,
+                        ) {
+                            main.post { onError(e.message ?: "Invalid QR code") }
+                        } catch (
+                            _: Exception,
+                        ) {
+                            // Damaged frame; keep scanning
+                        } finally {
+                            image.close()
                         }
-                    } catch (_: com.google.zxing.NotFoundException) { /* Next frame */ }
-                    catch (e: IllegalArgumentException) { main.post { onError(e.message ?: "Invalid QR code") } }
-                    catch (_: Exception) { /* Damaged frame; keep scanning */ }
-                    finally { image.close() }
+                    }
+                    provider?.unbindAll()
+                    provider?.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                } catch (e: Exception) {
+                    onError(e.message ?: "Unable to start camera")
                 }
-                provider?.unbindAll()
-                provider?.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
-            } catch (e: Exception) { onError(e.message ?: "Unable to start camera") }
-        }
+            }
         providerFuture.addListener(listener, ContextCompat.getMainExecutor(context))
-        onDispose { disposed.set(true); provider?.unbindAll(); executor.shutdownNow() }
+        onDispose {
+            disposed.set(true)
+            provider?.unbindAll()
+            executor.shutdownNow()
+        }
     }
     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxWidth().height(320.dp))
 }
