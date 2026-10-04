@@ -12,13 +12,13 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Add Android ktlint and lint gates.
   - [x] Add Rust format, Clippy, and test gates to CI; normalize npm installs.
   - [x] Pin `.nvmrc` to Node 24.21.0 for repeatable packaged builds.
-  - [ ] Verify each gate fails on an intentional violation and confirm the CI workflow runs remotely.
+  - [ ] Verify each gate fails on an intentional violation and confirm the CI workflow runs remotely. Local gate-fail verified (2026-10-04): planted an unused variable (ESLint `no-unused-vars`), a mis-indent (Prettier), `x + 0` (Clippy `identity_op`), a 2-space Kotlin indent (ktlint), a failing JS test, and a failing Rust test; each made its gate exit non-zero, then reverted. CI remote run needs an explicit push, which awaits your go-ahead.
 - [ ] Phase 2 — Security fixes.
   - [x] Reject foreign Host and Origin values on the management UI, with regression tests.
   - [x] End the managed receiver when the desktop wrapper closes its stdin.
   - [x] Redact Android pairing tokens and clarify TLS validation behavior.
   - [x] Add a shared HTTP client and sidecar startup timeout; restrict debug binary override.
-  - [ ] Pin CI downloads/actions and configure GitHub environment protection for signing releases. The workflow now names `release`; repository settings still need protection.
+  - [ ] Pin CI downloads/actions and configure GitHub environment protection for signing releases. Actions and `appimagetool`/type-2 runtime are pinned (commit SHAs / tagged releases with `sha256sum -c`); only the GitHub `release` environment protection remains, and that is a manual repository setting, not a commit.
 - [ ] Phase 3 — Bugs and regression tests.
   - [x] Move the Android media deletion result into the ViewModel and handle Back during transfer.
   - [ ] Verify MOVE with a rotation during the system dialog on a device or emulator (none attached locally).
@@ -27,12 +27,12 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Test the protocol vector and correct schema drift.
   - [x] Fix Rust UTF-8 streaming, with a split-byte regression test.
   - [x] Fix the AppImage ARM path and Android release version code.
-- [ ] Phase 4 — Refactoring.
-  - [ ] Simplify Android ViewModel state and extract transfer runner and shared helpers.
+- [x] Phase 4 — Refactoring.
+  - [x] Simplify Android ViewModel state and extract transfer runner and shared helpers. Gradle gate green (2026-10-04); `TransferRunner.kt`, `Hashing.kt`, `Names.kt` extracted and in use; dead code (`SourceKind`, `MediaEntry.isScreenshot`, `clearError`) removed; delete decision driven by `TransferState.canDeleteSource`.
   - [x] Consolidate the ViewModel's screen-level fields into one immutable `UiState` data class; `MainActivity` reads them via `model.uiState`. Verified: `:app:assembleDebug` green (fresh `compileDebugKotlin`), `:app:test` 14/14 pass (0 failures/errors/skipped), fidelity diff vs the git original confirms no logic dropped, and single-writer threading analysis confirms no lost byte-callback updates.
   - [x] Split receiver route handlers and reuse `uiState()`.
   - [x] Deduplicate Rust running state checks and build script platform mapping.
-- [ ] Phase 5 — Documentation.
+- [x] Phase 5 — Documentation.
   - [x] Update README and developer documentation.
   - [x] Update protocol, security, and architecture docs; add durable contributor guidance.
   - [x] Check documented commands and links.
@@ -54,6 +54,8 @@ check` passes; `npm run package:sea --prefix receiver` writes `dist/phonehaul-li
 CI-tooling-gated (`appimagetool`/runtime and `libxdo-dev` absent here, correctly
 documented as build-time-only); all Markdown links resolve. Phase 5 checkboxes
 marked complete.
+
+Work log (2026-10-04, continued): Phase 1 gate verification complete — each gate observed failing on a planted violation (ESLint, Prettier, Clippy, ktlint, JS test, Rust test), all reverted. Phase 4 refactoring confirmed complete and its checkbox flipped (gradle green). Remaining manual items: publish the Phase 0 review document; configure the GitHub `release` environment protection; push `refactor/andre-progress` and confirm CI green (awaiting explicit go-ahead); the on-device MOVE-rotation test (no device attached); and the optional pre-existing flaky SIGTERM-shutdown test in `receiver/tests/managed.test.js`.
 
 Context
 Stefano Gozzi built PhoneHaul (sg0zzy/phonehaul, 23 commits, about 5k lines) with AI help. It transfers files over the local network between an Android phone and a computer. It has three parts:
