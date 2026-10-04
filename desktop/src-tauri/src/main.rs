@@ -273,7 +273,7 @@ async fn running_root(client: &Client, local_root: &str, lan_root: &str) -> bool
         .send()
         .await
         .ok()
-        .map_or(false, |response| response.status().is_success())
+        .is_some_and(|response| response.status().is_success())
     {
         return true;
     }
@@ -282,7 +282,7 @@ async fn running_root(client: &Client, local_root: &str, lan_root: &str) -> bool
         .send()
         .await
         .ok()
-        .map_or(false, |response| response.status().is_success())
+        .is_some_and(|response| response.status().is_success())
 }
 
 #[tauri::command]
@@ -303,13 +303,7 @@ async fn refresh_qr(service: State<'_, Shared>) -> Result<(), String> {
         let s = service.lock().unwrap();
         (s.root.clone(), s.host.clone(), s.port)
     };
-    if !running_root(
-        http_client(),
-        &root,
-        &format!("http://{}:{}", host, port),
-    )
-        .await
-    {
+    if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
         return Err("PhoneHaul server is stopped".into());
     }
     request_json(
@@ -343,13 +337,7 @@ async fn set_destination(app: tauri::AppHandle, service: State<'_, Shared>) -> R
         let s = service.lock().unwrap();
         (s.root.clone(), s.host.clone(), s.port)
     };
-    if !running_root(
-        http_client(),
-        &root,
-        &format!("http://{}:{}", host, port),
-    )
-        .await
-    {
+    if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
         return Err("PhoneHaul server is stopped".into());
     }
     let client = http_client();
@@ -402,13 +390,7 @@ async fn queue_paths(
         let service = service.lock().unwrap();
         (service.root.clone(), service.host.clone(), service.port)
     };
-    if !running_root(
-        http_client(),
-        &root,
-        &format!("http://{}:{}", host, port),
-    )
-        .await
-    {
+    if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
         return Err("PhoneHaul server is stopped".into());
     }
 
