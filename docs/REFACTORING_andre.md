@@ -12,7 +12,7 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Add Android ktlint and lint gates.
   - [x] Add Rust format, Clippy, and test gates to CI; normalize npm installs.
   - [x] Pin `.nvmrc` to Node 24.21.0 for repeatable packaged builds.
-  - [ ] Verify each gate fails on an intentional violation and confirm the CI workflow runs remotely. Local gate-fail verified (2026-10-04): planted an unused variable (ESLint `no-unused-vars`), a mis-indent (Prettier), `x + 0` (Clippy `identity_op`), a 2-space Kotlin indent (ktlint), a failing JS test, and a failing Rust test; each made its gate exit non-zero, then reverted. CI remote run needs an explicit push, which awaits your go-ahead.
+  - [x] Verify each gate fails on an intentional violation and confirm the CI workflow runs remotely. Local gate-fail verified (2026-10-04): planted an unused variable (ESLint `no-unused-vars`), a mis-indent (Prettier), `x + 0` (Clippy `identity_op`), a 2-space Kotlin indent (ktlint), a failing JS test, and a failing Rust test; each made its gate exit non-zero, then reverted. Remote run confirmed green on `main` (2026-10-05, run 37309567889, 7 jobs).
 - [ ] Phase 2 — Security fixes.
   - [x] Reject foreign Host and Origin values on the management UI, with regression tests.
   - [x] End the managed receiver when the desktop wrapper closes its stdin.
@@ -59,8 +59,7 @@ Work log (2026-10-04, continued): Phase 1 gate verification complete — each
 gate observed failing on a planted violation (ESLint, Prettier, Clippy, ktlint,
 JS test, Rust test), all reverted. Phase 4 refactoring confirmed complete and
 its checkbox flipped (gradle green). Remaining manual items: publish the Phase 0
-review document; configure the GitHub `release` environment protection; push
-`refactor/andre-progress` and confirm CI green (awaiting explicit go-ahead); the
+review document; configure the GitHub `release` environment protection; the
 on-device MOVE-rotation test (no device attached).
 
 Work log (2026-10-05): The flaky SIGTERM-shutdown test was a production bug, not
@@ -81,7 +80,8 @@ permanent test — the existing one now covers the signal path. Docs synced
 (`docs/development.md`, `docs/security.md`, `docs/architecture.md`). The CI
 sidecar-staging step is empirically justified: with
 `desktop/src-tauri/resources/phonehaul-server` removed, `cargo test` exits 101 on
-the build-script glob.
+the build-script glob. Pushed `main` (`f4253f1`) with the author's go-ahead; the
+CI workflow ran green remotely (run 37309567889, 7 jobs).
 
 Context
 Stefano Gozzi built PhoneHaul (sg0zzy/phonehaul, 23 commits, about 5k lines) with AI help. It transfers files over the local network between an Android phone and a computer. It has three parts:
