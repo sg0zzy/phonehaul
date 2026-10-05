@@ -19,7 +19,7 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Redact Android pairing tokens and clarify TLS validation behavior.
   - [x] Add a shared HTTP client and sidecar startup timeout; restrict debug binary override.
   - [ ] Pin CI downloads/actions and configure GitHub environment protection for signing releases. Actions and `appimagetool`/type-2 runtime are pinned (commit SHAs / tagged releases with `sha256sum -c`); only the GitHub `release` environment protection remains, and that is a manual repository setting, not a commit.
-- [ ] Phase 3 — Bugs and regression tests.
+- [x] Phase 3 — Bugs and regression tests.
   - [x] Move the Android media deletion result into the ViewModel and handle Back during transfer.
   - [x] Verify MOVE with a rotation during the system dialog on a device or emulator. Confirmed on the Pixel 8a (2026-10-05): MOVE a photo, rotate while the system delete dialog is open, confirm — the transfer completed and the source was deleted, so the deferred delete decision survived the rotation.
   - [x] Fix the pairing QR encoding the management UI request Host header instead of the LAN address. `handleUi` declared `const host = request.headers.host`, shadowing the `host = localAddress()` parameter, so the QR carried `h=127.0.0.1:<uiPort>` and the Android parser rejected it as non-private ("Invalid or non-local PhoneHaul QR"). Reproduced on the live receiver: the QR bytes changed with the request Host header. Renamed the guard variable to `requestHost`; guard behavior unchanged. Regression test added in `receiver/tests/api.test.js`.
