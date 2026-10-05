@@ -74,6 +74,15 @@ waits up to 30 s for the `PHONEHAUL_READY <json>` line on the sidecar's stdout
 The sidecar is killed (`SIGTERM` on Unix / `kill` on Windows) when the desktop
 app exits. See [docs/security.md](security.md) for the boundary details.
 
+**Window size.** The window starts at **580 × 763** logical pixels, the size that
+exactly fits the rendered content at the frontend's `max-width: 580px` (measured in
+headless Chromium with the queue and message areas empty). The minimum is
+**284 × 520**: 284 is the narrowest width the content reflows to without horizontal
+overflow, and below the content height the page scrolls. The `window-state` plugin
+remembers only the window **position** (`StateFlags::POSITION`, file
+`window-state-compact.json` in the app config dir); size and maximized state are not
+restored, so startup is always the content-fit default.
+
 ## Building the standalone receiver
 
 The standalone receiver is a **Node.js SEA** executable (the receiver bundled
