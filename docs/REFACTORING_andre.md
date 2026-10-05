@@ -22,6 +22,7 @@ This section is the restart point. Check an item only after the change and its r
 - [ ] Phase 3 — Bugs and regression tests.
   - [x] Move the Android media deletion result into the ViewModel and handle Back during transfer.
   - [ ] Verify MOVE with a rotation during the system dialog on a device or emulator (none attached locally).
+  - [x] Fix the pairing QR encoding the management UI request Host header instead of the LAN address. `handleUi` declared `const host = request.headers.host`, shadowing the `host = localAddress()` parameter, so the QR carried `h=127.0.0.1:<uiPort>` and the Android parser rejected it as non-private ("Invalid or non-local PhoneHaul QR"). Reproduced on the live receiver: the QR bytes changed with the request Host header. Renamed the guard variable to `requestHost`; guard behavior unchanged. Regression test added in `receiver/tests/api.test.js`.
   - [x] Add certificate pinning and MOVE decision tests.
   - [x] Investigate hard link failure on exFAT and fix if confirmed. Microsoft documents that exFAT and FAT32 do not support hard links; confirmed EPERM on a mounted exFAT image. Added `TransferReceiver.upload()` fallback committing via `rename` when `link()` is unsupported, with unit tests (link-failure and race/no-clobber). Real exFAT mount E2E verified PASS.
   - [x] Test the protocol vector and correct schema drift.
@@ -82,6 +83,23 @@ sidecar-staging step is empirically justified: with
 `desktop/src-tauri/resources/phonehaul-server` removed, `cargo test` exits 101 on
 the build-script glob. Pushed `main` (`f4253f1`) with the author's go-ahead; the
 CI workflow ran green remotely (run 37309567889, 7 jobs).
+
+Work log (2026-10-05, continued): The pairing failure is a receiver bug, not a
+stale APK. `handleUi`'s `const host = request.headers.host` shadowed the
+`host = localAddress()` parameter, so the QR carried the browser's Host header
+and the Android parser rejected it as non-private. Measured before on the
+running receiver: `/api/ui` reported `127.0.0.1:46443` with the default Host
+header and `localhost:46443` with an allowed alternate one, and the two QR data
+URLs hashed differently (`aa02702486be73aa…` vs `05b52708d424c934…`). After
+renaming to `requestHost`, both the fixed source and a freshly packaged SEA
+binary report `192.168.1.102` with byte-identical QRs across Host headers. The
+guard semantics are unchanged (`403 Invalid management host`). New regression
+test; `npm run check` green (39 tests + smoke). The Android APK is current and
+reinstalled (Pixel 8a, `versionCode=1`, `lastUpdateTime` 2026-10-05 15:10:35);
+phone `192.168.1.111` reaches the desktop `192.168.1.102` (ping 0% loss). The
+still-running instance is the pre-fix binary (PID 289005) — `npm run package:sea`
+cannot overwrite an executing binary (`ETXTBSY`), so the desktop app must be
+restarted from a rebuilt binary before re-scanning.
 
 Context
 Stefano Gozzi built PhoneHaul (sg0zzy/phonehaul, 23 commits, about 5k lines) with AI help. It transfers files over the local network between an Android phone and a computer. It has three parts:

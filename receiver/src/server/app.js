@@ -209,8 +209,8 @@ export async function startReceiver({
         `http://127.0.0.1:${ui.address().port}`,
         `http://localhost:${ui.address().port}`,
       ]);
-      const host = request.headers.host;
-      if (!host || !allowedOrigins.has(`http://${host}`)) {
+      const requestHost = request.headers.host;
+      if (!requestHost || !allowedOrigins.has(`http://${requestHost}`)) {
         return json(response, 403, { error: 'Invalid management host' });
       }
       const origin = request.headers.origin;

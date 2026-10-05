@@ -138,6 +138,29 @@ test('management UI rejects foreign Host and Origin without changing settings', 
   }
 });
 
+test('pairing QR encodes the LAN host, not the request Host header', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-qr-host-'));
+  const settingsFile = path.join(root, 'settings.json');
+  const destination = path.join(root, 'dest');
+  await writeFile(settingsFile, JSON.stringify({ destination, conflict: 'rename' }));
+  const receiver = await startReceiver({ host: '127.0.0.1', settingsFile });
+  try {
+    const uiPort = new URL(receiver.uiUrl).port;
+    const loopback = JSON.parse((await localRequest(receiver.uiUrl, '/api/ui')).body);
+    const localhost = JSON.parse(
+      (
+        await localRequest(receiver.uiUrl, '/api/ui', {
+          headers: { Host: `localhost:${uiPort}` },
+        })
+      ).body,
+    );
+    assert.equal(localhost.host, '127.0.0.1');
+    assert.equal(localhost.qr, loopback.qr);
+  } finally {
+    await receiver.close();
+  }
+});
+
 test('management UI is local, self-contained, and closes cleanly', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-ui-'));
   const settingsFile = path.join(root, 'settings.json');
