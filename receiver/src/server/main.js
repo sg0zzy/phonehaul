@@ -24,6 +24,8 @@ async function main() {
           console.error(error.message);
           process.exitCode = 1;
         }
+        // The resumed stdin keeps the event loop alive, so shutdown must drop it.
+        process.stdin.pause();
       };
       for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, stop);
       process.stdin.on('end', stop);

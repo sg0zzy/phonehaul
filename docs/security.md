@@ -68,7 +68,7 @@ localhost**:
   (random port) and pipes stdout/stderr.
 - **Handshake.** The backend waits up to 30 s for the sidecar's
   `PHONEHAUL_READY { "uiUrl", "host", "port" }` line on stdout; the sidecar then
-  exits on stdin EOF.
+  exits on `SIGINT`/`SIGTERM` or stdin EOF.
 - **Control.** The backend issues Tauri commands over `127.0.0.1` HTTP
   (`get_status` → `GET /api/ui`, `refresh_qr` → `POST /api/qr/refresh`,
   `set_destination` → native folder picker + `POST /api/settings`,

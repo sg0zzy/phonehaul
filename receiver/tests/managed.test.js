@@ -20,7 +20,7 @@ test('desktop managed mode reports its address and shuts down on SIGTERM', async
         PHONEHAUL_TRANSFER_PORT: '0',
         PHONEHAUL_SETTINGS_FILE: path.join(directory, 'settings.json'),
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     },
   );
   let output = '';
@@ -58,8 +58,10 @@ test('desktop managed mode reports its address and shuts down on SIGTERM', async
     });
     assert.equal(new URL(ready.uiUrl).hostname, '127.0.0.1');
     assert.ok(ready.port > 0);
+    // stdin stays open, so the only way the child can exit is the signal handler.
+    const exit = once(child, 'exit');
     child.kill('SIGTERM');
-    const [code, signal] = await once(child, 'exit');
+    const [code, signal] = await exit;
     assert.equal(code, 0);
     assert.equal(signal, null);
   } finally {

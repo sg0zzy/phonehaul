@@ -38,7 +38,8 @@ process** ("the sidecar") and drives it.
   `PHONEHAUL_DESKTOP_MANAGED=1 PHONEHAUL_NO_BROWSER=1 PHONEHAUL_TRANSFER_PORT=0`
   (random LAN port), piping stdout/stderr. It waits up to 30 s for the sidecar's
   `PHONEHAUL_READY { "uiUrl", "host", "port" }` line. On exit it kills the
-  sidecar (`SIGTERM` on Unix / `kill` on Windows).
+  sidecar (`SIGTERM` on Unix / `kill` on Windows); the sidecar closes its servers
+  and drops its stdin handle, so it exits and the Rust `child.wait()` returns.
 - **Backend ↔ sidecar.** The Rust backend talks to the sidecar **only over
   `127.0.0.1`** via a single static `reqwest` client (5 s connect / 10 s
   request timeout). It maps Tauri commands to the sidecar's loopback UI

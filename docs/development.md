@@ -185,7 +185,7 @@ bash scripts/build-desktop-macos.sh
 | `PHONEHAUL_NO_BROWSER` | unset | `1` suppresses auto-opening a browser on the LAN UI. Set by the desktop app. |
 | `PHONEHAUL_SETTINGS_FILE` | platform default | Absolute path overriding where the settings file is read/written. |
 | `PHONEHAUL_EXIT_ON_UI_CLOSE` | unset | `1` makes the receiver exit 15 s after the last UI heartbeat (no open UI tab). |
-| `PHONEHAUL_DESKTOP_MANAGED` | unset | `1` (desktop-managed): emit `PHONEHAUL_READY {…}` on stdout and exit on stdin EOF instead of auto-browsing. |
+| `PHONEHAUL_DESKTOP_MANAGED` | unset | `1` (desktop-managed): emit `PHONEHAUL_READY {…}` on stdout and exit on `SIGINT`/`SIGTERM` or stdin EOF instead of auto-browsing. |
 | `PHONEHAUL_SERVER_BIN` | `dist/phonehaul-…` | Debug-only: override which server binary the desktop launches. |
 | `XDG_DOWNLOAD_DIR` | `$XDG_DATA_HOME/phonehaul/downloads` or `~/Downloads` | Linux override for the downloads directory. |
 | `APPIMAGETOOL` | `appimagetool` | Path to `appimagetool` (build-time, AppImage). |

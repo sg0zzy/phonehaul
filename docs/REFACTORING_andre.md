@@ -55,7 +55,33 @@ CI-tooling-gated (`appimagetool`/runtime and `libxdo-dev` absent here, correctly
 documented as build-time-only); all Markdown links resolve. Phase 5 checkboxes
 marked complete.
 
-Work log (2026-10-04, continued): Phase 1 gate verification complete — each gate observed failing on a planted violation (ESLint, Prettier, Clippy, ktlint, JS test, Rust test), all reverted. Phase 4 refactoring confirmed complete and its checkbox flipped (gradle green). Remaining manual items: publish the Phase 0 review document; configure the GitHub `release` environment protection; push `refactor/andre-progress` and confirm CI green (awaiting explicit go-ahead); the on-device MOVE-rotation test (no device attached); and the optional pre-existing flaky SIGTERM-shutdown test in `receiver/tests/managed.test.js`.
+Work log (2026-10-04, continued): Phase 1 gate verification complete — each
+gate observed failing on a planted violation (ESLint, Prettier, Clippy, ktlint,
+JS test, Rust test), all reverted. Phase 4 refactoring confirmed complete and
+its checkbox flipped (gradle green). Remaining manual items: publish the Phase 0
+review document; configure the GitHub `release` environment protection; push
+`refactor/andre-progress` and confirm CI green (awaiting explicit go-ahead); the
+on-device MOVE-rotation test (no device attached).
+
+Work log (2026-10-05): The flaky SIGTERM-shutdown test was a production bug, not
+a test problem. In managed mode the desktop keeps the sidecar's stdin open, so
+`process.stdin.resume()` held the event loop alive after `receiver.close()`: the
+handler ran, the servers closed, and the process never exited, which blocked
+`child.wait()` in `desktop/src-tauri/src/main.rs` forever. Measured before: 10/10
+spawns of `receiver/src/server/main.js` with piped stdin were still running 3 s
+after `SIGTERM`, and 8 of 40 runs of the package test command failed — the test
+used `stdio: 'ignore'` (stdin = `/dev/null`), so its exit came from the stdin
+`end` path, not from the signal. Fix: `process.stdin.pause()` after
+`receiver.close()` in the managed `stop()` handler, so the loop drains and the
+process exits with `process.exitCode`; the test now uses
+`stdio: ['pipe', 'pipe', 'pipe']` and registers the exit listener before
+`SIGTERM`, so the exit is provably attributable to the signal. Measured after:
+0/10 hangs, 40/40 clean runs, `npm run check` green (38 tests + smoke). No new
+permanent test — the existing one now covers the signal path. Docs synced
+(`docs/development.md`, `docs/security.md`, `docs/architecture.md`). The CI
+sidecar-staging step is empirically justified: with
+`desktop/src-tauri/resources/phonehaul-server` removed, `cargo test` exits 101 on
+the build-script glob.
 
 Context
 Stefano Gozzi built PhoneHaul (sg0zzy/phonehaul, 23 commits, about 5k lines) with AI help. It transfers files over the local network between an Android phone and a computer. It has three parts:
