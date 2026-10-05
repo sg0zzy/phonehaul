@@ -21,7 +21,7 @@ This section is the restart point. Check an item only after the change and its r
   - [ ] Pin CI downloads/actions and configure GitHub environment protection for signing releases. Actions and `appimagetool`/type-2 runtime are pinned (commit SHAs / tagged releases with `sha256sum -c`); only the GitHub `release` environment protection remains, and that is a manual repository setting, not a commit.
 - [ ] Phase 3 — Bugs and regression tests.
   - [x] Move the Android media deletion result into the ViewModel and handle Back during transfer.
-  - [ ] Verify MOVE with a rotation during the system dialog on a device or emulator (none attached locally).
+  - [x] Verify MOVE with a rotation during the system dialog on a device or emulator. Confirmed on the Pixel 8a (2026-10-05): MOVE a photo, rotate while the system delete dialog is open, confirm — the transfer completed and the source was deleted, so the deferred delete decision survived the rotation.
   - [x] Fix the pairing QR encoding the management UI request Host header instead of the LAN address. `handleUi` declared `const host = request.headers.host`, shadowing the `host = localAddress()` parameter, so the QR carried `h=127.0.0.1:<uiPort>` and the Android parser rejected it as non-private ("Invalid or non-local PhoneHaul QR"). Reproduced on the live receiver: the QR bytes changed with the request Host header. Renamed the guard variable to `requestHost`; guard behavior unchanged. Regression test added in `receiver/tests/api.test.js`.
   - [x] Add certificate pinning and MOVE decision tests.
   - [x] Investigate hard link failure on exFAT and fix if confirmed. Microsoft documents that exFAT and FAT32 do not support hard links; confirmed EPERM on a mounted exFAT image. Added `TransferReceiver.upload()` fallback committing via `rename` when `link()` is unsupported, with unit tests (link-failure and race/no-clobber). Real exFAT mount E2E verified PASS.
@@ -123,6 +123,12 @@ Verified: `unsquashfs -offset 944632` on the receiver AppImage lists `.DirIcon`
 badging` on the debug APK reports `icon='res/mipmap-anydpi-v26/ic_launcher.xml'`.
 Root gate green (39 tests + smoke); Android gate green (`BUILD SUCCESSFUL`, no
 lint/ktlint violations).
+
+Work log (2026-10-05, continued): Phase 3 rotation check confirmed on the
+Pixel 8a. MOVE a photo, rotate the device while the system delete dialog is
+open, confirm: the transfer completed and the source was deleted, so the
+deferred delete decision survived the rotation and the `BackHandler` did not
+cancel the in-flight transfer. Checkbox flipped; no code change.
 Context
 Stefano Gozzi built PhoneHaul (sg0zzy/phonehaul, 23 commits, about 5k lines) with AI help. It transfers files over the local network between an Android phone and a computer. It has three parts:
 
@@ -310,7 +316,7 @@ Move the CompletableDeferred into the ViewModel.
 The ViewModel emits a one-shot delete request through a Channel. The Activity collects it with repeatOnLifecycle(STARTED) and launches it with the existing deleteLauncher, whose callback now calls model.onDeleteResult(ok).
 The Activity method reference is no longer passed into the ViewModel.
 Add a BackHandler that maps system Back to vm.back() and is disabled while a transfer runs.
-Proof: on an emulator, MOVE a photo, rotate while the system dialog is open, confirm, and see the transfer complete. If no emulator is available, I’ll say so.
+Proof: on an emulator, MOVE a photo, rotate while the system dialog is open, confirm, and see the transfer complete. If no emulator is available, I’ll say so. Done on the Pixel 8a on 2026-10-05: the transfer completed across the rotation with the source deleted.
 Android tests:
 Extract the trust manager into pinnedTrustManager(fingerprint) and test it with a fixed test certificate: a matching cert is accepted, any other cert and an empty chain are rejected.
 Extract the MOVE delete decision into a pure function and test the statuses: committed+matching hash, already_present, skipped, failed.
