@@ -171,6 +171,13 @@ jobs:
       - name: Check JavaScript and integration flow
         if: matrix.platform == 'linux'
         run: npm run check
+      - name: Stage receiver sidecar
+        if: matrix.platform == 'linux'
+        # tauri-build validates the bundle.resources glob (resources/phonehaul-server*)
+        # in tauri.conf.json on every `cargo` invocation, so the Rust check below
+        # requires the sidecar to exist. It is gitignored and normally staged by
+        # the build's beforeBuildCommand; stage it here so a fresh checkout passes.
+        run: npm --prefix desktop run build:sidecar
       - name: Check Rust formatting, lint, and tests
         if: matrix.platform == 'linux'
         working-directory: desktop/src-tauri
