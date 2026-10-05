@@ -24,7 +24,7 @@ try {
   await mkdir(appDir, { recursive: true });
   await copyFile(executable, path.join(appDir, 'phonehaul'));
   await chmod(path.join(appDir, 'phonehaul'), 0o755);
-  const iconDir = path.join(appDir, 'usr', 'share', 'icons', 'hicolor', 'scalable', 'apps');
+  const iconDir = path.join(appDir, 'usr', 'share', 'icons', 'hicolor', '128x128', 'apps');
   await mkdir(iconDir, { recursive: true });
   const appRun = `#!/bin/sh\nAPPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexport PHONEHAUL_EXIT_ON_UI_CLOSE=1\nexec "$APPDIR/phonehaul" "$@"\n`;
   await writeFile(path.join(appDir, 'AppRun'), appRun, { mode: 0o755 });
@@ -32,10 +32,9 @@ try {
     path.join(appDir, 'phonehaul.desktop'),
     `[Desktop Entry]\nType=Application\nName=PhoneHaul Receiver\nComment=Move files from Android to this computer over the local network\nExec=AppRun\nIcon=phonehaul\nTerminal=true\nCategories=Utility;\n`,
   );
-  const icon = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#08765f"/><path d="M35 24h58v80H35z" fill="#fff"/><path d="M46 36h36v42H46z" fill="#dfeae4"/><path d="M50 91h28" stroke="#08765f" stroke-width="6" stroke-linecap="round"/><path d="M64 46v24m-9-9 9 9 9-9" fill="none" stroke="#08765f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  const iconPath = path.join(iconDir, 'phonehaul.svg');
-  await writeFile(iconPath, icon);
-  await copyFile(iconPath, path.join(appDir, 'phonehaul.svg'));
+  const iconPath = path.join(iconDir, 'phonehaul.png');
+  await copyFile(path.join(rootDir, 'assets', 'appicon-128.png'), iconPath);
+  await copyFile(iconPath, path.join(appDir, 'phonehaul.png'));
   await symlink(path.relative(appDir, iconPath), path.join(appDir, '.DirIcon'));
   const args = [appDir, stagedAppImage];
   if (process.env.APPIMAGE_RUNTIME) args.push('--runtime-file', process.env.APPIMAGE_RUNTIME);

@@ -20,6 +20,7 @@ This guide is the single source of truth for **developer** tasks (build, release
 ├── android/             # Android app (Kotlin, Compose, Gradle)
 ├── integration-tests/   # smoke / end-to-end tests
 ├── protocol/            # protocol.json (schema for the LAN protocol)
+├── assets/              # App icon master + AppImage icon asset
 └── .github/workflows/   # CI builds
 ```
 
@@ -212,6 +213,62 @@ The receiver stores a small JSON settings file.
 | Linux | `${XDG_CONFIG_HOME:-$HOME/.config}/phonehaul/settings.json` |
 | Windows | `%APPDATA%\PhoneHaul\settings.json` |
 | macOS | `~/Library/Application Support/PhoneHaul/settings.json` |
+
+## App icons
+
+Every platform icon comes from one master asset, `assets/icon.png` (1024x1024,
+square, transparent corners). The artwork is a gradient-heavy raster, so it is
+**not** vectorizable — the committed platform assets are downscaled rasters
+generated from the master.
+
+| Platform | Assets | Sizes |
+|----------|--------|-------|
+| Tauri (Linux/Windows/macOS) | `desktop/src-tauri/icons/icon.png`, `icon.ico`, `icon.icns` | 512; ICO 16/32/48/64/128/256; ICNS 16–1024 |
+| Windows Store (MSIX) | `desktop/msix/Assets/{StoreLogo,Square150x150Logo,Square44x44Logo}.png` | 50 / 150 / 44 |
+| Android launcher | `android/app/src/main/res/mipmap-*/ic_launcher.png` + `ic_launcher_foreground.png`, `mipmap-anydpi-v26/ic_launcher.xml` | 48/72/96/144/192; foreground 108dp with the artwork inset to the 72dp safe zone |
+| Linux AppImage | `assets/appicon-128.png` → `usr/share/icons/hicolor/128x128/apps/phonehaul.png` + `.DirIcon` | 128 |
+
+Regenerate with ImageMagick:
+
+```sh
+magick assets/icon.png -resize 512x512 desktop/src-tauri/icons/icon.png
+for s in 16 32 48 64 128 256; do magick assets/icon.png -resize ${s}x${s} /tmp/i${s}.png; done
+magick /tmp/i16.png /tmp/i32.png /tmp/i48.png /tmp/i64.png /tmp/i128.png /tmp/i256.png \
+  desktop/src-tauri/icons/icon.ico
+magick assets/icon.png -resize 50x50 desktop/msix/Assets/StoreLogo.png
+magick assets/icon.png -resize 150x150 desktop/msix/Assets/Square150x150Logo.png
+magick assets/icon.png -resize 44x44 desktop/msix/Assets/Square44x44Logo.png
+magick assets/icon.png -resize 128x128 assets/appicon-128.png
+
+for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+  n=${d%%:*}; s=${d##*:}
+  magick assets/icon.png -resize ${s}x${s} android/app/src/main/res/mipmap-$n/ic_launcher.png
+done
+for d in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
+  n=${d%%:*}; s=${d##*:}
+  magick assets/icon.png -resize $((s*2/3))x$((s*2/3)) -background none -gravity center -extent ${s}x${s} \
+    android/app/src/main/res/mipmap-$n/ic_launcher_foreground.png
+done
+```
+
+ImageMagick writes an ICNS as a single PNG, so the container is built directly:
+
+```python
+import struct, subprocess
+pairs = [('ic11', 16), ('ic12', 32), ('ic13', 32), ('ic14', 64),
+         ('ic15', 128), ('ic16', 256), ('ic09', 512), ('ic10', 1024)]
+entries = []
+for t, s in pairs:
+    p = f'/tmp/icns_{t}.png'
+    subprocess.run(['magick', 'assets/icon.png', '-resize', f'{s}x{s}', p], check=True)
+    entries.append((t.encode(), open(p, 'rb').read()))
+body = b''.join(t + struct.pack('>I', 8 + len(d)) + d for t, d in entries)
+open('desktop/src-tauri/icons/icon.icns', 'wb').write(b'icns' + struct.pack('>I', 8 + len(body)) + body)
+```
+
+> The ICNS above was generated on **Linux**; macOS rendering is **unverified on
+> this workstation**. The Android adaptive background (`@color/ic_launcher_background`,
+> `#0146FD`) is the dominant blue of the artwork.
 
 ## Checking the code
 

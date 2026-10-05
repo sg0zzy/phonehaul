@@ -101,6 +101,28 @@ still-running instance is the pre-fix binary (PID 289005) — `npm run package:s
 cannot overwrite an executing binary (`ETXTBSY`), so the desktop app must be
 restarted from a rebuilt binary before re-scanning.
 
+
+Work log (2026-10-05, continued): Placeholder artwork replaced with the
+supplied logo across all platforms. Master `assets/icon.png` is the source PNG
+padded to square and downscaled to 1024x1024; per-platform rasters are committed
+because the artwork has 21258 unique colors and a radial glow, so potrace-style
+tracing would destroy it (potrace/inkscape are not installed). Tauri icons
+regenerated: `icon.png` 512x512, `icon.ico` with 6 entries (16/32/48/64/128/256,
+verified by parsing the header count), `icon.icns` built as a container with
+entries ic11–ic16 plus ic09/ic10 (ImageMagick writes ICNS as a single PNG, so the
+container was assembled in Python; macOS rendering is unverified on Linux).
+Android launcher icons generated for mdpi–xxxhdpi plus the adaptive-icon XML and
+`ic_launcher_background` `#0146FD`, and `android:icon` added to the manifest —
+without that reference the mipmaps are inert. MSIX assets regenerated with the
+exact names `package-msix.js` expects. The receiver AppImage icon is now the
+committed 128x128 PNG in the hicolor theme instead of a hardcoded SVG.
+Verified: `unsquashfs -offset 944632` on the receiver AppImage lists `.DirIcon`
+(symlink to `usr/share/icons/hicolor/128x128/apps/phonehaul.png`, 128x128) and
+`Icon=phonehaul` in the desktop entry; the rebuilt Tauri AppImage bundles a
+512x512 icon whose md5 equals `desktop/src-tauri/icons/icon.png`; `aapt dump
+badging` on the debug APK reports `icon='res/mipmap-anydpi-v26/ic_launcher.xml'`.
+Root gate green (39 tests + smoke); Android gate green (`BUILD SUCCESSFUL`, no
+lint/ktlint violations).
 Context
 Stefano Gozzi built PhoneHaul (sg0zzy/phonehaul, 23 commits, about 5k lines) with AI help. It transfers files over the local network between an Android phone and a computer. It has three parts:
 
