@@ -74,6 +74,15 @@ waits up to 30 s for the `PHONEHAUL_READY <json>` line on the sidecar's stdout
 The sidecar is killed (`SIGTERM` on Unix / `kill` on Windows) when the desktop
 app exits. See [docs/security.md](security.md) for the boundary details.
 
+**Window size.** The window starts at **580 × 763** logical pixels, the size that
+exactly fits the rendered content at the frontend's `max-width: 580px` (measured in
+headless Chromium with the queue and message areas empty). The minimum is
+**284 × 520**: 284 is the narrowest width the content reflows to without horizontal
+overflow, and below the content height the page scrolls. The `window-state` plugin
+remembers only the window **position** (`StateFlags::POSITION`, file
+`window-state-compact.json` in the app config dir); size and maximized state are not
+restored, so startup is always the content-fit default.
+
 ## Building the standalone receiver
 
 The standalone receiver is a **Node.js SEA** executable (the receiver bundled
@@ -116,8 +125,8 @@ Run either:
 ```
 
 > **Note:** the standalone receiver AppImage is **Linux-only**. On Linux you
-> also have the *desktop* app's AppImage — see [README](../README.md#which-appimage)
-> for which one to pick.
+> also have the *desktop* app's AppImage — see
+> [README](../README.md#which-appimage-do-i-pick-on-linux) for which one to pick.
 
 ## Building the Android app
 
@@ -223,10 +232,11 @@ generated from the master.
 
 | Platform | Assets | Sizes |
 |----------|--------|-------|
-| Tauri (Linux/Windows/macOS) | `desktop/src-tauri/icons/icon.png`, `icon.ico`, `icon.icns` | 512; ICO 16/32/48/64/128/256; ICNS 16–1024 |
+| Tauri (Linux/Windows/macOS) | `desktop/src-tauri/icons/icon.png`, `icon.ico`, `icon.icns`, `16x16.png`–`256x256.png` | 512; ICO 16/32/48/64/128/256; ICNS 16–1024; AppImage hicolor 16/32/48/64/128/256/256@2/512 |
 | Windows Store (MSIX) | `desktop/msix/Assets/{StoreLogo,Square150x150Logo,Square44x44Logo}.png` | 50 / 150 / 44 |
 | Android launcher | `android/app/src/main/res/mipmap-*/ic_launcher.png` + `ic_launcher_foreground.png`, `mipmap-anydpi-v26/ic_launcher.xml` | 48/72/96/144/192; foreground 108dp with the artwork inset to the 72dp safe zone |
 | Linux AppImage | `assets/appicon-128.png` → `usr/share/icons/hicolor/128x128/apps/phonehaul.png` + `.DirIcon` | 128 |
+| In-app UI | `desktop/frontend/public/icon.png` (favicon + header mark), `receiver/src/web/icon.js` (data URI — the receiver has no static-asset route and the SEA bundle has no filesystem assets) | 128 / 64 |
 
 Regenerate with ImageMagick:
 
@@ -239,6 +249,13 @@ magick assets/icon.png -resize 50x50 desktop/msix/Assets/StoreLogo.png
 magick assets/icon.png -resize 150x150 desktop/msix/Assets/Square150x150Logo.png
 magick assets/icon.png -resize 44x44 desktop/msix/Assets/Square44x44Logo.png
 magick assets/icon.png -resize 128x128 assets/appicon-128.png
+for s in 16 32 48 64 128 256; do
+  magick assets/icon.png -resize ${s}x${s} desktop/src-tauri/icons/${s}x${s}.png
+done
+magick assets/icon.png -resize 256x256 'desktop/src-tauri/icons/128x128@2x.png'
+magick assets/icon.png -resize 128x128 desktop/frontend/public/icon.png
+magick assets/icon.png -resize 64x64 /tmp/i64.png
+printf "export const icon =\\n  'data:image/png;base64,%s';\\n" "$(base64 -w0 /tmp/i64.png)" > receiver/src/web/icon.js
 
 for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
   n=${d%%:*}; s=${d##*:}

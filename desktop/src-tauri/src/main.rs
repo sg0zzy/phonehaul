@@ -550,14 +550,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                // Start with the compact default once for existing installations,
-                // then continue remembering any size the user chooses afterward.
+                // Startup size is the content-fit default from tauri.conf.json; only the
+                // window position is remembered across runs.
                 .with_filename("window-state-compact.json")
-                .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::POSITION
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
-                )
+                .with_state_flags(tauri_plugin_window_state::StateFlags::POSITION)
                 .build(),
         )
         .setup(|app| {

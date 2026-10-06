@@ -51,6 +51,9 @@ process** ("the sidecar") and drives it.
 - **Queue feeding.** The desktop's pickers/drops feed the **same** `SendQueue`
   used by the browser UI, through the same loopback endpoints; the desktop adds a
   native UX layer without changing the dispatch logic.
+- **Window.** Starts content-fit at 580 × 763 logical pixels (minimum 284 × 520);
+  the `window-state` plugin restores position only, so startup size is always the
+  configured default — see [development.md](development.md).
 
 ## Computer → Android
 
