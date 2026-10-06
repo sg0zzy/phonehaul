@@ -28,6 +28,8 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Test the protocol vector and correct schema drift.
   - [x] Fix Rust UTF-8 streaming, with a split-byte regression test.
   - [x] Fix the AppImage ARM path and Android release version code.
+  - [x] Collapse pairing to two states — connected or not connected — with the QR shown whenever not connected. `PairingSession.connected` was sticky because Android's Done button never notifies the receiver, so `pairingComplete` stayed true forever. A paired phone that declared `send-to-phone` and stays quiet for 15 s (`phoneOfflineWindowMs`) now ends the session, fails the active send item with `Phone disconnected`, and generates a new QR. `pairingComplete` is removed; both UIs read `connected`. Regression test in `receiver/tests/api.test.js`.
+  - [x] Stop the desktop sidecar when supervisor heartbeats stop arriving, so a desktop app killed without running its exit hook does not leave the receiver running. The Rust backend writes a `heartbeat` line to the sidecar's stdin every 5 s; managed mode exits 15 s after the last one (`PHONEHAUL_HEARTBEAT_TIMEOUT_MS`), armed on the first heartbeat. Regression tests in `receiver/tests/managed.test.js` and `desktop/src-tauri/src/main.rs`.
 - [x] Phase 4 — Refactoring.
   - [x] Simplify Android ViewModel state and extract transfer runner and shared helpers. Gradle gate green (2026-10-04); `TransferRunner.kt`, `Hashing.kt`, `Names.kt` extracted and in use; dead code (`SourceKind`, `MediaEntry.isScreenshot`, `clearError`) removed; delete decision driven by `TransferState.canDeleteSource`.
   - [x] Consolidate the ViewModel's screen-level fields into one immutable `UiState` data class; `MainActivity` reads them via `model.uiState`. Verified: `:app:assembleDebug` green (fresh `compileDebugKotlin`), `:app:test` 14/14 pass (0 failures/errors/skipped), fidelity diff vs the git original confirms no logic dropped, and single-writer threading analysis confirms no lost byte-callback updates.
@@ -198,7 +200,7 @@ MEDIUM: CI supply chain.
 appimagetool and the AppImage type-2 runtime are downloaded from a moving continuous release with no checksum, and that runtime ships inside the AppImage.
 Actions are pinned to floating tags, not commit SHAs.
 The signing workflow can be run from any branch with no protected environment.
-MEDIUM: the Tauri sidecar can be orphaned. If the desktop app crashes, the receiver keeps the LAN listener open until its next log line fails on the closed output pipe.
+MEDIUM: the Tauri sidecar can be orphaned. If the desktop app crashes, the receiver keeps the LAN listener open until its next log line fails on the closed output pipe. Fixed (2026-10-06): the backend writes a `heartbeat` line to the sidecar's stdin every 5 s and managed mode exits 15 s after the last one. Measured with a supervisor that keeps stdin open: orphaned before the change, dead 17.3 s after supervisor start after.
 LOW issues:
 The auto-generated toString() of Android’s Pairing data class includes the token.
 The always-true HostnameVerifier has no comment explaining why that’s safe; Play’s scanner may flag it.

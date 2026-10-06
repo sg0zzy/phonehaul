@@ -23,13 +23,11 @@ function update(data) {
     pairingVersion = ui.pairingVersion;
     if (changed && !ui.qr && !ui.connected) refresh().catch((e) => message(String(e)));
   }
-  if (typeof ui.pairingComplete === 'boolean') {
-    $('qr').hidden = ui.pairingComplete;
-    $('pairing-expiry').hidden = ui.pairingComplete;
-    $('pairing-copy').textContent = ui.pairingComplete
-      ? ui.connected
-        ? 'Phone paired. The QR code is hidden.'
-        : 'Phone paired but not currently connected. Generate a new code to pair again.'
+  if (typeof ui.connected === 'boolean') {
+    $('qr').hidden = ui.connected;
+    $('pairing-expiry').hidden = ui.connected;
+    $('pairing-copy').textContent = ui.connected
+      ? 'Phone paired. The QR code is hidden.'
       : 'Open PhoneHaul on your Android phone and scan this code.';
     $('refresh-qr').hidden = Boolean(ui.connected);
   }

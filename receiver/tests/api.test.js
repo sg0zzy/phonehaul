@@ -179,12 +179,11 @@ test('management UI is local, self-contained, and closes cleanly', async () => {
     assert.match(response.type, /text\/html/);
     assert.match(response.body, /<title>PhoneHaul Receiver<\/title>/);
     assert.match(response.body, /new EventSource\('\/api\/events'\)/);
-    assert.match(response.body, /\$\('qr'\)\.hidden=s\.pairingComplete/);
     assert.doesNotMatch(response.body, /<script[^>]+src=/);
     const ui = await uiRequest(receiver.uiUrl, '/api/ui');
     assert.equal(ui.settings.destination, destination);
     assert.match(ui.qr, /^data:image\/png;base64,/);
-    assert.equal(ui.pairingComplete, false);
+    assert.equal(ui.connected, false);
     assert.equal(await emptyRequest(receiver.uiUrl, '/api/heartbeat'), 204);
   } finally {
     await receiver.close();
@@ -298,14 +297,12 @@ test('pairing updates the management event stream so the QR can disappear', asyn
   try {
     const initial = await nextEvent();
     assert.equal(initial.connected, false);
-    assert.equal(initial.pairingComplete, false);
     const connected = await request(receiver, 'POST', '/api/session/connect', undefined, {
       'X-PhoneHaul-Capabilities': 'send-to-phone',
     });
     assert.equal(connected.status, 200);
     const state = await nextEvent();
     assert.equal(state.connected, true);
-    assert.equal(state.pairingComplete, true);
     assert.equal(state.sendConnected, true);
   } finally {
     await reader.cancel();
@@ -343,7 +340,84 @@ test('expired QR is replaced in the local UI and old token is rejected', async (
     );
     const paired = await uiRequest(receiver.uiUrl, '/api/ui');
     assert.equal(paired.sendConnected, true);
-    assert.equal(paired.pairingComplete, true);
+    assert.equal(paired.connected, true);
+  } finally {
+    await receiver.close();
+  }
+});
+
+test('a paired phone that goes quiet ends the session and shows the QR again', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-offline-'));
+  const settingsFile = path.join(root, 'settings.json');
+  await writeFile(
+    settingsFile,
+    JSON.stringify({ destination: path.join(root, 'dest'), conflict: 'rename' }),
+  );
+  const receiver = await startReceiver({
+    host: '127.0.0.1',
+    transferPort: 0,
+    settingsFile,
+    phoneOfflineWindowMs: 0,
+  });
+  try {
+    const original = receiver.session.token;
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          'X-PhoneHaul-Capabilities': 'send-to-phone',
+        })
+      ).status,
+      200,
+    );
+    const data = 'alpha';
+    const queued = await new Promise((resolve, reject) => {
+      const req = http.request(
+        new URL('/api/send/items', receiver.uiUrl),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Length': Buffer.byteLength(data),
+            'X-PhoneHaul-Relative-Path': encodeURIComponent('Project/spec.txt'),
+          },
+        },
+        (res) => {
+          const chunks = [];
+          res.on('data', (chunk) => chunks.push(chunk));
+          res.on('end', () =>
+            resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }),
+          );
+        },
+      );
+      req.on('error', reject);
+      req.end(data);
+    });
+    assert.equal(queued.status, 201);
+    assert.equal((await request(receiver, 'GET', '/api/send/next')).status, 200);
+    const dropped = await uiRequest(receiver.uiUrl, '/api/ui');
+    assert.equal(dropped.connected, false);
+    assert.equal(dropped.sendConnected, false);
+    assert.equal(dropped.pairingVersion, 1);
+    assert.match(dropped.qr, /^data:image\/png;base64,/);
+    const file = dropped.sendQueue.find((entry) => entry.type === 'file');
+    assert.equal(file.state, 'failed');
+    assert.equal(file.error, 'Phone disconnected');
+    assert.notEqual(receiver.session.token, original);
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          Authorization: `Bearer ${original}`,
+        })
+      ).status,
+      401,
+    );
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          'X-PhoneHaul-Capabilities': 'send-to-phone',
+        })
+      ).status,
+      200,
+    );
   } finally {
     await receiver.close();
   }

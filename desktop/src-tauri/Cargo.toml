@@ -18,6 +18,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 urlencoding = "2"
 libc = "0.2"
 futures-util = "0.3"
+parking_lot = "0.12"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-window-state = "2"

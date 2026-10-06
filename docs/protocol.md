@@ -9,9 +9,12 @@ application data.
 All transfer requests use `Authorization: Bearer <token>`. The unused pairing
 token expires after five minutes; the receiver then generates a new QR and
 updates the local browser UI. `POST /api/session/connect` associates it with
-the running receiver session. Restart invalidates it. Receivers supporting
-per-file streaming advertise `incremental-transfer` in the connection
-capabilities; the current Android app requires that capability.
+the running receiver session. Restart invalidates it. A connected session also
+ends when a phone that declared `send-to-phone` stays quiet for 15 s, which
+generates a new QR: pairing is either connected or not connected, and the QR is
+shown whenever it is not. Receivers supporting per-file streaming advertise
+`incremental-transfer` in the connection capabilities; the current Android app
+requires that capability.
 
 ## Phone → Computer transfers
 
@@ -116,13 +119,17 @@ manifest and upload endpoints unchanged.
 | `GET /` | 200 | HTML page |
 | `POST /api/heartbeat` | 204 | — |
 | `GET /api/events` | 200 | SSE: `data: <uiState JSON>\n\n` |
-| `GET /api/ui` | 200 | `{ settings, qr, host, port, partials, connected, online, phoneConnected, transfer, sendItems }` |
+| `GET /api/ui` | 200 | `{ settings, qr, host, port, partials, transfer, connected, sendConnected, pairingVersion, sendQueue }` |
 | `POST /api/send/items` | 201 | `{ id }` |
 | `DELETE /api/send/items/:id` | 200 | `{ status: "cancelled" }` |
 | `POST /api/qr/refresh` | 200 | `{ status: "ready" }` |
 | `POST /api/settings` | 200 | `{ destination, conflict, available }` |
 
 `available` is the number of free bytes in the destination directory.
+`connected` is the pairing state the UI renders: the session is connected and,
+for a phone that declared `send-to-phone`, it has been seen within the 15 s
+offline window. `sendConnected` is `connected` plus that capability. The UI
+shows the QR whenever `connected` is false.
 
 ## Error codes
 
@@ -130,7 +137,7 @@ All errors return JSON `{ "error": "<message>", ... }`.
 
 | Code | Condition | Body |
 |---|---|---|
-| `401` | Bad or expired pairing session | `{ error }` |
+| `401` | Bad, expired, or offline-gap-ended pairing session | `{ error }` |
 | `403` | Loopback guard — non-loopback `Host` or `Origin` on the UI | `{ error: "Invalid management host" }` / `{ error: "Invalid management origin" }` |
 | `404` | Unknown route | `{ error: "Not found" }` |
 | `400` | Default / malformed request; may include `available` | `{ error, available? }` |

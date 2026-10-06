@@ -79,7 +79,12 @@ localhost**:
   loopback-only** (403 guard). The LAN HTTPS surface is not exposed by the
   desktop; the desktop never forwards user credentials to the sidecar.
 - **Lifecycle.** The sidecar is killed (`SIGTERM` on Unix / `kill` on Windows)
-  when the desktop app exits, so it never outlives its owner.
+  when the desktop app exits, so it never outlives its owner. If the exit hook
+  never runs, stdin EOF ends the sidecar when the backend exclusively holds the
+  pipe's write end; when that write end is held open elsewhere, the sidecar stops
+  15 s after the last `heartbeat` line. That heartbeat is a supervisor-only
+  channel: a browser tab at the loopback UI cannot keep the sidecar alive after
+  its owner is gone.
 
 Because the backend is a static in-process Tauri command set (no `TauriPlugin`
 with arbitrary code execution) and the sidecar is a separate, killed-on-exit

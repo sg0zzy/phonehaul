@@ -37,9 +37,14 @@ process** ("the sidecar") and drives it.
   `phonehaul-server` with
   `PHONEHAUL_DESKTOP_MANAGED=1 PHONEHAUL_NO_BROWSER=1 PHONEHAUL_TRANSFER_PORT=0`
   (random LAN port), piping stdout/stderr. It waits up to 30 s for the sidecar's
-  `PHONEHAUL_READY { "uiUrl", "host", "port" }` line. On exit it kills the
-  sidecar (`SIGTERM` on Unix / `kill` on Windows); the sidecar closes its servers
-  and drops its stdin handle, so it exits and the Rust `child.wait()` returns.
+  `PHONEHAUL_READY { "uiUrl", "host", "port" }` line, then writes a `heartbeat`
+  line to the sidecar's stdin every 5 s. On exit it kills the sidecar (`SIGTERM`
+  on Unix / `kill` on Windows); the sidecar closes its servers and drops its
+  stdin handle, so it exits and the Rust `child.wait()` returns. If the desktop
+  process is killed without running its exit hook, stdin EOF ends the sidecar
+  when the backend exclusively holds the pipe's write end; when that write end
+  stays open elsewhere, the sidecar stops 15 s after the last heartbeat instead
+  of running on.
 - **Backend ↔ sidecar.** The Rust backend talks to the sidecar **only over
   `127.0.0.1`** via a single static `reqwest` client (5 s connect / 10 s
   request timeout). It maps Tauri commands to the sidecar's loopback UI

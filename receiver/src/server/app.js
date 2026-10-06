@@ -40,6 +40,7 @@ export async function startReceiver({
   settingsFile = defaultSettingsPath,
   openBrowser = false,
   exitOnUiClose = false,
+  phoneOfflineWindowMs = 15_000,
 } = {}) {
   let settings = await loadSettings(settingsFile);
   await mkdir(settings.destination, { recursive: true });
@@ -56,13 +57,13 @@ export async function startReceiver({
   let lastUiHeartbeat = null;
   let closeReceiver = async () => {};
   let lastPhoneSeen = 0;
+  let wasPhoneOnline = false;
   let phoneSupportsSend = false;
   const phoneOnline = () =>
-    session.connected && (!phoneSupportsSend || Date.now() - lastPhoneSeen < 15_000);
+    session.connected && (!phoneSupportsSend || Date.now() - lastPhoneSeen < phoneOfflineWindowMs);
   const uiState = () => ({
     transfer: transfer.summary(false),
     connected: phoneOnline(),
-    pairingComplete: session.connected,
     sendConnected: phoneOnline() && phoneSupportsSend,
     pairingVersion,
     sendQueue: sendQueue.summary(),
@@ -83,16 +84,26 @@ export async function startReceiver({
   const refreshPairing = () => {
     session = new PairingSession();
     phoneSupportsSend = false;
+    lastPhoneSeen = 0;
+    wasPhoneOnline = false;
     pairingVersion++;
     log('session created', 'expires in 5 minutes if unused');
     broadcast();
   };
-  const refreshExpiredPairing = () => {
-    if (session.expired()) refreshPairing();
+  const refreshStalePairing = () => {
+    if (session.expired()) {
+      log('pairing session expired', 'generated a new QR code');
+      refreshPairing();
+      return;
+    }
+    if (session.connected && phoneSupportsSend && !phoneOnline()) {
+      log('phone offline', 'pairing session ended; the QR code is shown again');
+      sendQueue.failActive('Phone disconnected');
+      refreshPairing();
+    }
   };
-  const pairingTimer = setInterval(refreshExpiredPairing, 1000);
+  const pairingTimer = setInterval(refreshStalePairing, 1000);
   pairingTimer.unref();
-  let wasPhoneOnline = false;
   const connectionTimer = setInterval(() => {
     const online = phoneOnline();
     if (online !== wasPhoneOnline) {
@@ -114,7 +125,7 @@ export async function startReceiver({
       const url = new URL(request.url, 'https://phonehaul.local');
       const token = /^Bearer (.+)$/i.exec(request.headers.authorization || '')?.[1];
       if (url.pathname === '/api/session/connect' && request.method === 'POST') {
-        refreshExpiredPairing();
+        refreshStalePairing();
         if (!session.connect(token)) {
           log('pairing rejected', 'invalid or expired session');
           return json(response, 401, { error: 'Invalid or expired session' });
@@ -242,7 +253,7 @@ export async function startReceiver({
         return;
       }
       if (url.pathname === '/api/ui' && request.method === 'GET') {
-        refreshExpiredPairing();
+        refreshStalePairing();
         const qr = await QRCode.toDataURL(session.uri(host, port, certFingerprint), {
           margin: 2,
           width: 320,

@@ -14,6 +14,9 @@ async function main() {
       exitOnUiClose: process.env.PHONEHAUL_EXIT_ON_UI_CLOSE === '1',
     });
     if (process.env.PHONEHAUL_DESKTOP_MANAGED === '1') {
+      const heartbeatTimeoutMs = Number(process.env.PHONEHAUL_HEARTBEAT_TIMEOUT_MS ?? 15_000);
+      if (!Number.isFinite(heartbeatTimeoutMs) || heartbeatTimeoutMs <= 0)
+        throw Error('PHONEHAUL_HEARTBEAT_TIMEOUT_MS must be a positive number of milliseconds');
       let stopping = false;
       const stop = async () => {
         if (stopping) return;
@@ -30,6 +33,18 @@ async function main() {
       for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, stop);
       process.stdin.on('end', stop);
       process.stdin.resume();
+      let lastOwnerHeartbeat = null;
+      process.stdin.on('data', (chunk) => {
+        for (const line of chunk.toString('utf8').split('\n'))
+          if (line.trim() === 'heartbeat') lastOwnerHeartbeat = Date.now();
+      });
+      const heartbeatMonitor = setInterval(() => {
+        if (lastOwnerHeartbeat !== null && Date.now() - lastOwnerHeartbeat >= heartbeatTimeoutMs) {
+          console.log('owner heartbeat timed out, stopping sidecar');
+          stop().catch((error) => console.error(error.message));
+        }
+      }, 1000);
+      heartbeatMonitor.unref();
       console.log(
         `PHONEHAUL_READY ${JSON.stringify({ uiUrl: receiver.uiUrl, host: receiver.host, port: receiver.port })}`,
       );

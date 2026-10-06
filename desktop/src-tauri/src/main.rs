@@ -1,15 +1,16 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+use parking_lot::Mutex;
 use reqwest::{header, Body, Client};
 use serde::Serialize;
 use serde_json::{json, Value};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::{
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Write},
     path::PathBuf,
-    process::{Child, Command, Stdio},
-    sync::{mpsc, Arc, Mutex, OnceLock},
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::{mpsc, Arc, OnceLock},
     time::Duration,
 };
 use tauri::{Emitter, Manager, State};
@@ -18,6 +19,7 @@ use tokio_util::io::ReaderStream;
 
 struct Service {
     child: Option<Child>,
+    stdin: Option<ChildStdin>,
     root: String,
     host: String,
     port: u16,
@@ -54,6 +56,30 @@ where
         for line in reader.lines().map_while(Result::ok) {
             on_line(line);
         }
+    })
+}
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+
+fn send_heartbeat<W: Write>(stdin: &mut W) -> std::io::Result<()> {
+    stdin.write_all(b"heartbeat\n")?;
+    stdin.flush()
+}
+
+// The sidecar stops when heartbeats stop arriving, so a supervisor killed
+// without running its exit hook still takes the background service with it.
+fn heartbeat_loop<W: Write + Send + 'static>(
+    shared: Shared,
+    mut stdin: W,
+    interval: Duration,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || loop {
+        if shared.lock().child.is_none() {
+            break;
+        }
+        if send_heartbeat(&mut stdin).is_err() {
+            break;
+        }
+        std::thread::sleep(interval);
     })
 }
 
@@ -142,6 +168,11 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
         .spawn()
         .map_err(|e| format!("Could not start server: {e}"))?;
     let stdout = child.stdout.take().ok_or("Could not read server startup")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("Could not write to server stdin")?;
+    send_heartbeat(&mut stdin).map_err(|e| format!("Could not reach server stdin: {e}"))?;
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -192,6 +223,7 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
     let port = ready["port"].as_u64().unwrap_or(0) as u16;
     Ok(Service {
         child: Some(child),
+        stdin: Some(stdin),
         root,
         host,
         port,
@@ -201,14 +233,19 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{drain_stdout, take_sse_events};
+    use super::{
+        drain_stdout, heartbeat_loop, stop, take_sse_events, Service, Shared, HEARTBEAT_INTERVAL,
+    };
+    use parking_lot::Mutex;
     use std::{
         io::{BufReader, Write},
         os::unix::net::UnixStream,
+        process::Command,
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
         },
+        time::{Duration, Instant},
     };
 
     #[test]
@@ -238,6 +275,72 @@ mod tests {
         assert!(take_sse_events(&mut buffer, &bytes[..split]).is_empty());
         let events = take_sse_events(&mut buffer, &bytes[split..]);
         assert_eq!(events[0]["destination"], "Café");
+    }
+
+    #[derive(Clone)]
+    struct Recorder(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Recorder {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn heartbeats(recorder: &Recorder) -> usize {
+        let recorded = recorder.0.lock();
+        String::from_utf8_lossy(&recorded)
+            .lines()
+            .filter(|line| *line == "heartbeat")
+            .count()
+    }
+
+    #[test]
+    fn heartbeat_loop_stops_before_writing_to_a_gone_sidecar() {
+        let recorder = Recorder(Arc::new(Mutex::new(Vec::new())));
+        let shared: Shared = Arc::new(Mutex::new(Service {
+            child: None,
+            stdin: None,
+            root: String::new(),
+            host: String::new(),
+            port: 0,
+            error: None,
+        }));
+        heartbeat_loop(shared, recorder.clone(), HEARTBEAT_INTERVAL)
+            .join()
+            .unwrap();
+        assert_eq!(heartbeats(&recorder), 0);
+    }
+
+    #[test]
+    fn heartbeat_loop_writes_periodically_and_stops_with_the_sidecar() {
+        let recorder = Recorder(Arc::new(Mutex::new(Vec::new())));
+        let shared: Shared = Arc::new(Mutex::new(Service {
+            child: Some(Command::new("/bin/sleep").arg("30").spawn().unwrap()),
+            stdin: None,
+            root: String::new(),
+            host: String::new(),
+            port: 0,
+            error: None,
+        }));
+        let handle = heartbeat_loop(shared.clone(), recorder.clone(), Duration::from_millis(200));
+
+        // The first heartbeat is immediate; a second one proves the loop repeats.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while heartbeats(&recorder) < 2 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let written = heartbeats(&recorder);
+        assert!(written >= 2, "expected periodic heartbeats, got {written}");
+
+        // Stop while the loop is between writes: its next iteration sees no child,
+        // so nothing is recorded after the sidecar is gone.
+        stop(&mut shared.lock());
+        handle.join().unwrap();
+        assert_eq!(heartbeats(&recorder), written);
     }
 }
 async fn request_json(
@@ -288,7 +391,7 @@ async fn running_root(client: &Client, local_root: &str, lan_root: &str) -> bool
 #[tauri::command]
 async fn get_status(service: State<'_, Shared>) -> Result<Value, String> {
     let (status, root) = {
-        let mut s = service.lock().unwrap();
+        let mut s = service.lock();
         (server_status(&mut s), s.root.clone())
     };
     if !status.running {
@@ -300,7 +403,7 @@ async fn get_status(service: State<'_, Shared>) -> Result<Value, String> {
 #[tauri::command]
 async fn refresh_qr(service: State<'_, Shared>) -> Result<(), String> {
     let (root, host, port) = {
-        let s = service.lock().unwrap();
+        let s = service.lock();
         (s.root.clone(), s.host.clone(), s.port)
     };
     if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
@@ -334,7 +437,7 @@ async fn set_destination(app: tauri::AppHandle, service: State<'_, Shared>) -> R
         return Err("Destination must be an existing directory".into());
     }
     let (root, host, port) = {
-        let s = service.lock().unwrap();
+        let s = service.lock();
         (s.root.clone(), s.host.clone(), s.port)
     };
     if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
@@ -387,7 +490,7 @@ async fn queue_paths(
     allow_directories: bool,
 ) -> Result<usize, String> {
     let (root, host, port) = {
-        let service = service.lock().unwrap();
+        let service = service.lock();
         (service.root.clone(), service.host.clone(), service.port)
     };
     if !running_root(http_client(), &root, &format!("http://{}:{}", host, port)).await {
@@ -514,7 +617,7 @@ fn start_events(app: tauri::AppHandle, shared: Shared) {
         let client = http_client();
         loop {
             let (root, live) = {
-                let mut s = shared.lock().unwrap();
+                let mut s = shared.lock();
                 (s.root.clone(), running(&mut s))
             };
             if live {
@@ -525,7 +628,7 @@ fn start_events(app: tauri::AppHandle, shared: Shared) {
                     while let Some(Ok(bytes)) = stream.next().await {
                         for data in take_sse_events(&mut buffer, &bytes) {
                             let (host, port) = {
-                                let s = shared.lock().unwrap();
+                                let s = shared.lock();
                                 (s.host.clone(), s.port)
                             };
                             let _=app.emit("phonehaul://status",json!({"server":{"running":true,"host":host,"port":port},"ui":data}));
@@ -534,7 +637,7 @@ fn start_events(app: tauri::AppHandle, shared: Shared) {
                 }
             }
             let (host, port) = {
-                let s = shared.lock().unwrap();
+                let s = shared.lock();
                 (s.host.clone(), s.port)
             };
             let _ = app.emit(
@@ -557,16 +660,21 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
-            let service = launch(app.handle()).unwrap_or_else(|e| Service {
+            let mut service = launch(app.handle()).unwrap_or_else(|e| Service {
                 child: None,
+                stdin: None,
                 root: String::new(),
                 host: String::new(),
                 port: 0,
                 error: Some(e),
             });
+            let stdin = service.stdin.take();
             let shared: Shared = Arc::new(Mutex::new(service));
             start_events(app.handle().clone(), shared.clone());
-            app.manage(shared);
+            app.manage(shared.clone());
+            if let Some(stdin) = stdin {
+                heartbeat_loop(shared, stdin, HEARTBEAT_INTERVAL);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -581,7 +689,7 @@ fn main() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(shared) = app.try_state::<Shared>() {
-                    stop(&mut shared.lock().unwrap());
+                    stop(&mut shared.lock());
                 }
             }
         });

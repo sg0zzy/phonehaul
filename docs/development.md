@@ -71,8 +71,11 @@ waits up to 30 s for the `PHONEHAUL_READY <json>` line on the sidecar's stdout
 `set_destination`, `send_files`, `queue_dropped_paths`) and relays
 `event`/`drop` events back to the frontend. It talks to the sidecar only over
 `127.0.0.1` (the sidecar's loopback guard rejects everything else, HTTP 403).
-The sidecar is killed (`SIGTERM` on Unix / `kill` on Windows) when the desktop
-app exits. See [docs/security.md](security.md) for the boundary details.
+It writes a `heartbeat` line to the sidecar's stdin immediately and then every
+5 s; managed mode exits 15 s after the last heartbeat, so a desktop app killed
+without running its exit hook still takes the sidecar with it. On a normal exit
+the backend kills the sidecar (`SIGTERM` on Unix / `kill` on Windows). See
+[docs/security.md](security.md) for the boundary details.
 
 **Window size.** The window starts at **580 × 763** logical pixels, the size that
 exactly fits the rendered content at the frontend's `max-width: 580px` (measured in
@@ -196,6 +199,7 @@ bash scripts/build-desktop-macos.sh
 | `PHONEHAUL_SETTINGS_FILE` | platform default | Absolute path overriding where the settings file is read/written. |
 | `PHONEHAUL_EXIT_ON_UI_CLOSE` | unset | `1` makes the receiver exit 15 s after the last UI heartbeat (no open UI tab). |
 | `PHONEHAUL_DESKTOP_MANAGED` | unset | `1` (desktop-managed): emit `PHONEHAUL_READY {…}` on stdout and exit on `SIGINT`/`SIGTERM` or stdin EOF instead of auto-browsing. |
+| `PHONEHAUL_HEARTBEAT_TIMEOUT_MS` | `15000` | Desktop-managed mode: exit this many milliseconds after the last `heartbeat` line on stdin. Inert until the first heartbeat arrives. |
 | `PHONEHAUL_SERVER_BIN` | `dist/phonehaul-…` | Debug-only: override which server binary the desktop launches. |
 | `XDG_DOWNLOAD_DIR` | `$XDG_DATA_HOME/phonehaul/downloads` or `~/Downloads` | Linux override for the downloads directory. |
 | `APPIMAGETOOL` | `appimagetool` | Path to `appimagetool` (build-time, AppImage). |
@@ -325,3 +329,105 @@ release tags. Artifacts are available in a workflow run's **Files** tab.
 | `desktop` | macOS x64 + arm64 (DMG) | `.dmg` (unsigned) | `phonehaul-desktop-macos-{x64,arm64}` |
 
 Release signing is handled by CI secrets; **keystores are never committed**.
+
+## Store publishing
+
+Both stores are wired in CI. The build/sign scripts are already in the repo;
+what's left is account registration plus a few GitHub secrets/variables you
+add once. Neither store requires a paid code-signing certificate — Android
+uses a free self-generated keystore, and the Microsoft Store re-signs the
+MSIX with a Microsoft certificate (no cert needed for an MSIX submission).
+
+### Google Play (Android)
+
+The workflow **`Android signed release`** (`.github/workflows/android-signed-release.yml`)
+runs on `v*` tags (and `workflow_dispatch`), in the protected **`release`**
+environment, and uploads a signed **APK** and **AAB** as the artifact
+`phonehaul-android-release`. Signing is read from four `release`-environment
+secrets (never committed):
+
+| Secret | What it is |
+|--------|-----------|
+| `ANDROID_KEYSTORE_BASE64` | `base64` of the `.jks` upload keystore |
+| `ANDROID_STORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | key alias |
+| `ANDROID_KEY_PASSWORD` | key password |
+
+`versionCode` is taken from `GITHUB_RUN_NUMBER` (auto-increments per tag);
+`versionName` is `0.1.0` in `android/app/build.gradle.kts`. To upload:
+
+1. In Play Console, create the app and **enroll in Play app signing** (Google
+   keeps the production key; you supply an *upload* key).
+2. Generate a free upload keystore (never commit it):
+   ```sh
+   keytool -genkeypair -v -keystore phonehaul-upload.jks -storetype PKCS12 \
+     -alias phonehaul -keyalg RSA -keysize 2048 -validity 10000
+   ```
+   Enter the same value as both the keystore and the key password when
+   prompted. That value is **both** `ANDROID_STORE_PASSWORD` and
+   `ANDROID_KEY_PASSWORD`. **Back up the `.jks` and its passwords offline** —
+   losing them means you can never update the app.
+3. Add the four secrets above to the `release` environment
+   (Settings → Environments → `release` → Secrets); `ANDROID_KEYSTORE_BASE64`
+   is the output of `base64 -w0 phonehaul-upload.jks`.
+4. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+5. Download the `phonehaul-android-release` artifact; upload the **`.aab`** in
+   Play Console (an AAB is required for production; the APK is for
+   internal/managed tracks).
+
+### Microsoft Store (Windows, MSIX)
+
+The **`desktop`** job in **`PhoneHaul builds`** builds an **unsigned** MSIX on
+the Windows runner when the repo variables `MSIX_IDENTITY_NAME` and
+`MSIX_PUBLISHER` are set, and uploads it under `dist/msix/*.msix` in the
+`phonehaul-desktop-windows` artifact. It is **x64** (the CI runner is x64).
+The Store re-signs it with a Microsoft certificate, so no code-signing
+certificate is needed.
+
+Set these GitHub **repository variables** (Settings → Secrets and variables →
+Actions → Variables):
+
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `MSIX_IDENTITY_NAME` | e.g. `youraccount.PhoneHaul` | 3–50 chars, `[A-Za-z0-9.-]`; exact Partner Center package name |
+| `MSIX_PUBLISHER` | e.g. `CN=Your Name, O=Your Name, L=City, S=State, C=US` | full Publisher DN, **exact** match to Partner Center, must start with `CN=` |
+| `MSIX_PUBLISHER_DISPLAY_NAME` | e.g. `Your Name` | optional, shown in the Store |
+| `MSIX_VERSION` | e.g. `1.0.0.0` | optional, default `1.0.0.0`; four numbers, first nonzero, last `0` |
+
+To register and submit:
+
+1. Register as a Microsoft Store developer (Partner Center) — one-time fee.
+2. In Partner Center, **New product → "MSIX or APPX"** (a *packaged* product,
+   **not** "EXE or MSI app"). Reserve the app name.
+3. Note the exact **Package identity** and **Publisher** DN from the product's
+   identity details, and put them in the variables above.
+4. Build (tag `v*`, or run `workflow_dispatch`) and download the `.msix`.
+5. In Partner Center, create a submission and upload the `.msix`.
+
+**Two things to expect on this path** (a `runFullTrust` / "packaged classic"
+Win32 app):
+- **WebView2.** The manifest's `MinVersion` is `10.0.19041.0` (21H1). The
+  Evergreen WebView2 runtime is preinstalled on every Windows 11 device and was
+  pushed to eligible Windows 10 devices by Microsoft, so the app finds it on
+  essentially all supported machines without bundling one. Do **not** add a
+  `Microsoft.WebView2` ExternalDependency — those are a known install failure
+  and aren't needed at this `MinVersion`. On the rare device missing the
+  runtime, the user installs it from
+  <https://developer.microsoft.com/microsoft-edge/webview2/>.
+- **`runFullTrust` review.** Packaging a desktop app as an MSIX marks it
+  `runFullTrust`; the Store may ask for a justification and gives it extra
+  vetting. If certification rejects it, the documented fallback is to register
+  the product as **"EXE or MSI app"** and upload a *code-signed* NSIS
+  installer (offline WebView2) instead — that path needs a paid CA
+  code-signing certificate, which is why the free default here is the MSIX.
+
+### Local signing (optional, for sideloading)
+
+- **Android:** `build.gradle.kts` also reads `~/.secrets/android/phonehaul/keystore.properties`
+  (keys `storeFile`, `storePassword`, `keyAlias`, `keyPassword`) so you can
+  build a signed release locally.
+- **Windows:** `npm --prefix desktop run package:msix` produces an unsigned
+  MSIX (needs `MSIX_IDENTITY_NAME`/`MSIX_PUBLISHER` set). To sideload it,
+  sign it yourself with `signtool` using a self- or CA-signed cert
+  (`makeappx pack` is used by the script; add `signtool sign /fd sha256 /a`
+  after, then install with `Add-AppPackage`).

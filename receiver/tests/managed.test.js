@@ -119,3 +119,52 @@ test('desktop managed mode exits when its wrapper closes stdin', async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('desktop managed mode stops when supervisor heartbeats stop arriving', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-managed-heartbeat-'));
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL('../src/server/main.js', import.meta.url))],
+    {
+      env: {
+        ...process.env,
+        PHONEHAUL_DESKTOP_MANAGED: '1',
+        PHONEHAUL_NO_BROWSER: '1',
+        PHONEHAUL_TRANSFER_PORT: '0',
+        PHONEHAUL_SETTINGS_FILE: path.join(directory, 'settings.json'),
+        PHONEHAUL_HEARTBEAT_TIMEOUT_MS: '200',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+  let output = '';
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Managed server did not start: ${output}`)),
+        10_000,
+      );
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => {
+        output += chunk;
+        if (output.includes('PHONEHAUL_READY ')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
+    // stdin stays open and no signal is sent, so the missed heartbeats are the only exit path.
+    child.stdin.write('heartbeat\n');
+    const [code, signal] = await once(child, 'exit');
+    assert.equal(code, 0);
+    assert.equal(signal, null);
+    assert.match(output, /owner heartbeat timed out/);
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await rm(directory, { recursive: true, force: true });
+  }
+});

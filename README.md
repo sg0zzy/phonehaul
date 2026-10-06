@@ -60,10 +60,13 @@ build matrix, environment variables, and per-platform notes.
   Pairing always uses the QR code, which carries the current port — just scan
   a fresh QR after restarting the app.
 - **Phone won't connect / QR stopped working.** QR codes expire after 5 minutes
-  and are re-generated on restart. Click **New QR** or relaunch the app.
+  and are re-generated on restart. The QR also reappears when the paired phone
+  goes quiet for 15 s — disconnecting on the phone ends the pairing — so scan
+  the code shown again. Click **New QR** or relaunch the app.
 - **The desktop restarts the receiver for you.** The sidecar is killed when the
   desktop exits and restarted on relaunch, so a stuck receiver is fixed by
-  relaunching the desktop app.
+  relaunching the desktop app. A desktop app killed without running its exit hook
+  still stops the sidecar 15 s after its last heartbeat.
 
 ### Standalone receiver
 
