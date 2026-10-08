@@ -2,6 +2,9 @@ package org.phonehaul.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageDecoder
 import android.net.Uri
@@ -58,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -71,6 +75,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private const val PRIVACY_POLICY_URL = "https://sg0zzy.github.io/phonehaul/privacy.html"
 
 class MainActivity : ComponentActivity() {
     private val model: PhoneHaulViewModel by viewModels()
@@ -212,6 +218,7 @@ private fun App(
                         )
                     }
                     Text("Launch PhoneHaul Receiver on your computer to display the QR code.")
+                    TextButton(onClick = vm::openAbout) { Text("About & privacy policy") }
                 }
                 Screen.SCAN -> {
                     Heading("Scan the computer QR")
@@ -377,6 +384,20 @@ private fun App(
                     Button(onClick = vm::newBatch, modifier = Modifier.fillMaxWidth()) { Text("Select more files") }
                     OutlinedButton(onClick = vm::disconnect) { Text("Done") }
                 }
+                Screen.ABOUT -> {
+                    Heading("About & privacy")
+                    Text("PhoneHaul sends only the files you select, plus their name, path, size and hash.")
+                    Text("The recipient is the computer you pair with on your local network. Nothing goes to the Internet.")
+                    Text("The camera is used only to decode the pairing QR code; frames are never saved or sent.")
+                    Text("The app stores one preference on the device: whether the notification permission was asked for.")
+                    val context = LocalContext.current
+                    Button(
+                        onClick = { openPrivacyPolicy(context, vm::showError) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Read the privacy policy") }
+                    Text(PRIVACY_POLICY_URL)
+                    Text("No analytics, advertising, or crash reporting. Developer: sg0zzy.")
+                }
             }
             vm.uiState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
@@ -507,4 +528,15 @@ private fun formatBytes(bytes: Long): String {
         index++
     } while (value >= 1024 && index < units.lastIndex)
     return "%.1f %s".format(value, units[index])
+}
+
+private fun openPrivacyPolicy(
+    context: Context,
+    onError: (String) -> Unit,
+) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+    } catch (_: ActivityNotFoundException) {
+        onError("No app can open the privacy policy. It is at $PRIVACY_POLICY_URL.")
+    }
 }

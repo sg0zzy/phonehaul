@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Privacy Policy — PhoneHaul</title>
+    <meta name="description" content="Privacy policy for the PhoneHaul Android app: what data the app reads, what it transmits, how it is protected, and how long it is retained.">
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        max-width: 46rem;
+        margin: 2.5rem auto;
+        padding: 0 1.25rem 3rem;
+        font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: #1b1b1b;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { color: #e6e6e6; }
+      }
+      h1 { font-size: 1.6rem; margin-top: 0; }
+      h2 { font-size: 1.2rem; margin-top: 2rem; }
+      p, li { max-width: 60ch; }
+      table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+      th, td { border: 1px solid #b9b9b9; padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
+      th { background: rgba(128, 128, 128, 0.12); }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+      .meta { color: #666; font-size: 0.9rem; }
+      .placeholder { border-left: 3px solid #d0a000; padding: 0.6rem 0.8rem; background: rgba(208, 160, 0, 0.1); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="meta">
+        PhoneHaul Android app (<code>org.phonehaul.app</code>) ·
+        Developer: <strong>sg0zzy</strong> ·
+        Effective date: <strong>2026-10-08</strong>
+      </p>
+
+      <div class="placeholder">
+        <p><strong>Placeholders to fill before publishing.</strong> The developer name above is the
+        GitHub account that owns the repository. Replace it with the exact name shown in the Google
+        Play listing, and add the privacy contact below. Google Play requires a privacy point of
+        contact or a working inquiry mechanism in the policy.</p>
+      </div>
+
+      <h2>Summary</h2>
+      <ul>
+        <li>PhoneHaul moves files you select from your phone to a computer you pair with, over your
+          local network only. It has no accounts, no cloud service, and no Internet relay.</li>
+        <li>The app does <strong>not</strong> read data silently: it only processes the files you pick,
+          plus the metadata needed to transfer and verify them.</li>
+        <li>Nothing is sent to any server or third party. The only network destination is the paired
+          computer's private LAN address.</li>
+        <li>The app stores no user data on the phone beyond one app preference. It contains no
+          analytics, advertising, or crash-reporting code.</li>
+        <li>Transfers are encrypted in transit with TLS and a certificate fingerprint pinned from the
+          QR code; cleartext traffic is disabled.</li>
+      </ul>
+
+      <h2>1. Data the app reads and transmits</h2>
+      <p>
+        Google Play defines "collect" as transmitting data from an app off the user's device. PhoneHaul
+        transmits the data below from the phone to the computer you pair with, so these data types are
+        treated as collected — even though the recipient is a device you control and no third party is
+        involved.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Where it comes from</th>
+            <th>Why it is needed</th>
+            <th>Where it goes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>File contents (bytes)</td>
+            <td>Files you select with the picker, the folder picker, or the photos/videos browser</td>
+            <td>The transfer itself</td>
+            <td>Paired computer, over the local network</td>
+          </tr>
+          <tr>
+            <td>Display name and relative path</td>
+            <td>Selected file/folder metadata (<code>DocumentFile</code>, <code>MediaStore</code>)</td>
+            <td>Recreating the folder structure at the destination and reporting progress</td>
+            <td>Paired computer</td>
+          </tr>
+          <tr>
+            <td>File size and last-modified time</td>
+            <td>File metadata</td>
+            <td>Progress reporting, conflict policy, and post-transfer verification</td>
+            <td>Paired computer</td>
+          </tr>
+          <tr>
+            <td>SHA-256 digest of each file</td>
+            <td>Computed on the phone</td>
+            <td>Verifying that the received copy matches the original before any source is deleted</td>
+            <td>Paired computer</td>
+          </tr>
+          <tr>
+            <td>Random per-file identifier (UUID)</td>
+            <td>Generated in memory per selected file</td>
+            <td>Correlating items within one transfer</td>
+            <td>Paired computer; never persisted on the phone</td>
+          </tr>
+          <tr>
+            <td>Pairing token and TLS certificate fingerprint</td>
+            <td>Decoded from the receiver's QR code</td>
+            <td>Authenticating the connection and verifying the receiver's certificate</td>
+            <td>Sent to the paired receiver as an authorization header; held in memory only, never written to disk</td>
+          </tr>
+          <tr>
+            <td>Camera frames while scanning the QR code</td>
+            <td>Rear camera</td>
+            <td>Decoding the QR code only</td>
+            <td>Nowhere. Frames are decoded in memory and released immediately; no photo is taken or saved</td>
+          </tr>
+          <tr>
+            <td>Media catalog listing (names, sizes, timestamps of photos/videos)</td>
+            <td><code>MediaStore.Images</code> / <code>MediaStore.Video</code> query</td>
+            <td>Showing you the browser so you can choose files</td>
+            <td>Held in memory on the phone only; only the items you explicitly select are transmitted</td>
+          </tr>
+          <tr>
+            <td>One app preference: whether the notification permission was requested</td>
+            <td>App itself</td>
+            <td>Avoid re-prompting on every transfer</td>
+            <td>Stored on the device only (private shared preferences, excluded from backup)</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The app does not read contacts, call logs, messages, location, account information, device
+        identifiers, or advertising IDs, and it has no permission to do so.
+      </p>
+
+      <h2>2. Permissions</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Permission</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>INTERNET</code></td>
+            <td>Communicating with the paired receiver on the local network.</td>
+          </tr>
+          <tr>
+            <td><code>CAMERA</code></td>
+            <td>Scanning the pairing QR code. Frames are used for decoding only and are never stored.</td>
+          </tr>
+          <tr>
+            <td><code>POST_NOTIFICATIONS</code></td>
+            <td>Showing the ongoing notification for an active transfer (Android 13+). Declining does not stop a transfer.</td>
+          </tr>
+          <tr>
+            <td><code>READ_MEDIA_IMAGES</code>, <code>READ_MEDIA_VIDEO</code>, <code>READ_MEDIA_VISUAL_USER_SELECTED</code>, <code>READ_EXTERNAL_STORAGE</code> (API&nbsp;32 and below)</td>
+            <td>Listing and reading the photos and videos you choose to transfer.</td>
+          </tr>
+          <tr>
+            <td><code>FOREGROUND_SERVICE</code>, <code>FOREGROUND_SERVICE_DATA_SYNC</code>, <code>WAKE_LOCK</code></td>
+            <td>Keeping an active transfer running when the screen turns off.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>3. Who receives your data</h2>
+      <p>
+        The only recipient is the computer you pair with, running the PhoneHaul receiver or desktop app.
+        The app connects to no other host: the pairing address must be a private IPv4 LAN address, and
+        there is no code path that contacts any third-party server, store, or analytics endpoint.
+        No data is shared with, sold to, or transferred to any third party.
+      </p>
+
+      <h2>4. How data is handled and protected</h2>
+      <ul>
+        <li><strong>Encryption in transit.</strong> All transfer traffic uses HTTPS. The receiver's
+          certificate is self-signed and ephemeral, so the app pins its SHA-256 fingerprint from the QR
+          code and refuses any connection whose certificate does not match. Cleartext traffic is
+          disabled in the app configuration.</li>
+        <li><strong>Restricted destination.</strong> The app rejects pairing codes that point to
+          non-private or link-local addresses.</li>
+        <li><strong>Short-lived credentials.</strong> The pairing token is random, expires after five
+          minutes, and is never written to disk on the phone.</li>
+        <li><strong>No logging.</strong> The app writes no logs of file names, paths, tokens, or
+          transfer contents. The receiver prints activity to its own local console and does not log
+          session tokens, keys, or certificate material.</li>
+        <li><strong>Verification before deletion.</strong> In MOVE mode a source file is deleted only
+          after the receiver confirms the received copy matches in size and SHA-256.</li>
+        <li><strong>No backup.</strong> The app is excluded from Android backup
+          (<code>allowBackup="false"</code>).</li>
+      </ul>
+
+      <h2>5. Retention</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Where</th>
+            <th>What is kept</th>
+            <th>How long</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phone — app storage</td>
+            <td>Only the single preference flag described above.</td>
+            <td>Until you clear the app data or uninstall the app.</td>
+          </tr>
+          <tr>
+            <td>Phone — memory</td>
+            <td>Selection lists, media listings, pairing data, transfer state.</td>
+            <td>Until you disconnect or close the app. Nothing is cached to disk.</td>
+          </tr>
+          <tr>
+            <td>Phone — your files</td>
+            <td>Unchanged in COPY mode. In MOVE mode the original is removed after verification.</td>
+            <td>Until you delete them, or until MOVE removes a verified original.</td>
+          </tr>
+          <tr>
+            <td>Phone — received files</td>
+            <td>Files sent from the computer are written to the public <code>Downloads</code> folder.</td>
+            <td>Until you delete them. The app never deletes received files.</td>
+          </tr>
+          <tr>
+            <td>Computer</td>
+            <td>Transferred files in the destination folder you chose (default <code>&lt;Downloads&gt;/PhoneHaul</code>), plus a small settings file holding the destination and conflict policy.</td>
+            <td>Until you delete them. Interrupted transfers can leave <code>*.phonehaul-partial</code> files until they are cleaned up.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>6. Deletion</h2>
+      <p>
+        PhoneHaul has no accounts, so there is no account to delete. You control deletion directly:
+      </p>
+      <ul>
+        <li>Delete your files on the phone and on the computer at any time.</li>
+        <li>Clear the app's stored preference: system Settings → Apps → PhoneHaul → Storage → Clear data,
+          or uninstall the app.</li>
+        <li>Remove transferred files from the destination folder on the computer, and clean up any
+          leftover partial files.</li>
+      </ul>
+      <p>
+        If you want confirmation that no other copy of your data exists, the answer is that the app
+        keeps no server-side or hidden copies: everything it holds is either in memory or in the files
+        you can see and delete yourself.
+      </p>
+
+      <h2>7. Third-party dependencies</h2>
+      <p>
+        The app uses only open-source libraries for its user interface, camera, QR decoding, and file
+        access: Jetpack Compose, androidx activity, lifecycle, <code>documentfile</code>, CameraX, ZXing,
+        and JUnit for tests. None of them collect data, perform analytics, show advertising, report
+        crashes, or open network connections. There is no analytics, telemetry, advertising, or
+        crash-reporting SDK in the app.
+      </p>
+
+      <h2>8. Data safety summary</h2>
+      <p>This table must match the Data safety section in the Google Play listing.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Data type</th>
+            <th>Collected (sent off the device)</th>
+            <th>Purpose</th>
+            <th>Shared with third parties</th>
+            <th>Voluntary</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Files and documents (contents, names, paths, sizes, modification times, SHA-256)</td>
+            <td>Yes</td>
+            <td>App functionality</td>
+            <td>No</td>
+            <td>Yes — only files you select</td>
+          </tr>
+          <tr>
+            <td>Photos and videos</td>
+            <td>Yes</td>
+            <td>App functionality</td>
+            <td>No</td>
+            <td>Yes — only items you select</td>
+          </tr>
+          <tr>
+            <td>Camera frames for QR decoding</td>
+            <td>No — processed on the device only</td>
+            <td>App functionality</td>
+            <td>No</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td>Location, device identifiers, advertising ID, contacts, accounts, call logs, messages</td>
+            <td>No</td>
+            <td>—</td>
+            <td>No</td>
+            <td>—</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Data is encrypted in transit (TLS with a pinned certificate fingerprint). Deletion is available
+        through the mechanisms in section 6.
+      </p>
+
+      <h2>9. Children</h2>
+      <p>
+        PhoneHaul is a personal file-transfer utility and is not directed at children under 13.
+      </p>
+
+      <h2>10. Contact</h2>
+      <p>
+        Developer: <strong>sg0zzy</strong> (must match the developer name in the Google Play listing).
+      </p>
+      <p>
+        Privacy contact: <strong>[privacy contact email — placeholder, to be filled in]</strong>.
+        Inquiries can also be submitted at <a href="https://github.com/sg0zzy/phonehaul/issues">https://github.com/sg0zzy/phonehaul/issues</a>.
+      </p>
+
+      <h2>11. Changes to this policy</h2>
+      <p>
+        This policy describes the app as it is built today. If the app's data handling changes, this page
+        is updated and the effective date above is revised. The policy is also reachable from the app's
+        About screen.
+      </p>
+    </main>
+  </body>
+</html>

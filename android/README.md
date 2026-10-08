@@ -1,6 +1,6 @@
 # Android client
 
-The native Android client supports Android 11+ (API 30+). It uses CameraX and ZXing to scan the receiver's QR, pins the receiver TLS certificate fingerprint, and rejects non-private IPv4 endpoints. The app has no accounts or background synchronization.
+The native Android client supports Android 11+ (API 30+). It uses CameraX and ZXing to scan the receiver's QR, pins the receiver TLS certificate fingerprint, and rejects non-private IPv4 endpoints. The app has no accounts or background synchronization. Its [privacy policy](../docs/privacy.html) is linked from the in-app About screen.
 
 Selection uses Android's document picker for multiple files, the tree picker for folders, and a MediaStore browser for photos and videos. Choosing a folder adds its files directly, including files in subfolders, without adding the source directories as transfer items. Each file keeps the selected folder name in its destination path, so the computer recreates that structure. Empty folders are not transferred. The MediaStore browser may show only the items Android grants permission to access. Android 11+ restricts some tree locations, including the storage root and Downloads root.
 

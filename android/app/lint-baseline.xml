@@ -155,4 +155,15 @@
             column="13"/>
     </issue>
 
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/org/phonehaul/app/MainActivity.kt"
+            line="538"
+            column="58"/>
+    </issue>
+
 </issues>

@@ -375,6 +375,21 @@ secrets (never committed):
    Play Console (an AAB is required for production; the APK is for
    internal/managed tracks).
 
+### Privacy policy and Data safety
+
+The policy is [docs/privacy.html](privacy.html). The `docs/` folder is the GitHub
+Pages source, so it serves at
+`https://sg0zzy.github.io/phonehaul/privacy.html`; the Android app opens that URL
+from its About screen, which is what Play requires (policy linked in the Console
+**and** reachable inside the app).
+
+Keep the Data safety answers consistent with the policy text. Play defines
+"collect" as transmitting data off the device, so the file contents and metadata
+PhoneHaul sends to the paired computer are collected even though the recipient is
+a device the user controls. The policy must name the developer exactly as the Play
+listing does, and must carry a working contact or inquiry mechanism — the contact
+line is currently a placeholder.
+
 ### Microsoft Store (Windows, MSIX)
 
 The **`desktop`** job in **`PhoneHaul builds`** builds an **unsigned** MSIX on

@@ -89,4 +89,5 @@ build matrix, environment variables, and per-platform notes.
 - [Protocol](docs/protocol.md)
 - [Security model](docs/security.md)
 - [Architecture](docs/architecture.md)
+- [Privacy policy](docs/privacy.html)
 - [Rules for contributors / AI agents](AGENTS.md)

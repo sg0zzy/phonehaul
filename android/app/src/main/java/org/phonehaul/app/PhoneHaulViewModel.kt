@@ -21,7 +21,7 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
-enum class Screen { START, SCAN, SELECT, MEDIA, REVIEW, PROGRESS, COMPLETE }
+enum class Screen { START, SCAN, SELECT, MEDIA, REVIEW, PROGRESS, COMPLETE, ABOUT }
 
 class PhoneHaulViewModel(
     application: Application,
@@ -57,6 +57,10 @@ class PhoneHaulViewModel(
         uiState = uiState.copy(error = null, screen = Screen.SCAN)
     }
 
+    fun openAbout() {
+        uiState = uiState.copy(error = null, screen = Screen.ABOUT)
+    }
+
     fun back() {
         if (!uiState.busy) {
             val screen =
@@ -64,6 +68,7 @@ class PhoneHaulViewModel(
                     Screen.SCAN -> Screen.START
                     Screen.MEDIA, Screen.REVIEW -> Screen.SELECT
                     Screen.SELECT -> Screen.START
+                    Screen.ABOUT -> Screen.START
                     else -> uiState.screen
                 }
             uiState = uiState.copy(error = null, screen = screen)
