@@ -387,8 +387,14 @@ Keep the Data safety answers consistent with the policy text. Play defines
 "collect" as transmitting data off the device, so the file contents and metadata
 PhoneHaul sends to the paired computer are collected even though the recipient is
 a device the user controls. The policy must name the developer exactly as the Play
-listing does, and must carry a working contact or inquiry mechanism — the contact
-line is currently a placeholder.
+listing does; privacy inquiries are handled through GitHub issues, which is the
+policy's contact mechanism.
+
+Play also requires a prominent disclosure inside the app, immediately before each
+runtime permission request, with an affirmative user action. The app shows a
+"Before you continue" screen (`Screen.DISCLOSE`) ahead of the camera, notification,
+and media permission prompts whenever a prompt is about to be launched, so the
+disclosure always precedes the request. Keep its wording aligned with the policy.
 
 ### Microsoft Store (Windows, MSIX)
 

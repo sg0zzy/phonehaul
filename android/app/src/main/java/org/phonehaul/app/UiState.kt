@@ -2,8 +2,11 @@ package org.phonehaul.app
 
 import android.net.Uri
 
+enum class Disclosure { CAMERA, NOTIFICATIONS, MEDIA }
+
 data class UiState(
     val screen: Screen = Screen.START,
+    val disclosure: Disclosure? = null,
     val pairing: Pairing? = null,
     val selected: List<SourceItem> = emptyList(),
     val media: List<MediaEntry> = emptyList(),

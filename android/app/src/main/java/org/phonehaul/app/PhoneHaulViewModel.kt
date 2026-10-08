@@ -21,7 +21,7 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
-enum class Screen { START, SCAN, SELECT, MEDIA, REVIEW, PROGRESS, COMPLETE, ABOUT }
+enum class Screen { START, DISCLOSE, SCAN, SELECT, MEDIA, REVIEW, PROGRESS, COMPLETE, ABOUT }
 
 class PhoneHaulViewModel(
     application: Application,
@@ -35,6 +35,7 @@ class PhoneHaulViewModel(
     private var inboxJob: Job? = null
     private var transferServiceStarted = false
     private var pendingDelete: CompletableDeferred<Boolean>? = null
+    private var pendingAfterDisclosure: (() -> Unit)? = null
     val deleteRequests = Channel<List<Uri>>(Channel.BUFFERED)
 
     val fileCount get() = uiState.selected.size
@@ -61,6 +62,21 @@ class PhoneHaulViewModel(
         uiState = uiState.copy(error = null, screen = Screen.ABOUT)
     }
 
+    fun showDisclosure(
+        disclosure: Disclosure,
+        then: () -> Unit,
+    ) {
+        pendingAfterDisclosure = then
+        uiState = uiState.copy(error = null, screen = Screen.DISCLOSE, disclosure = disclosure)
+    }
+
+    fun acceptDisclosure() {
+        val then = pendingAfterDisclosure
+        pendingAfterDisclosure = null
+        uiState = uiState.copy(error = null, screen = Screen.START, disclosure = null)
+        then?.invoke()
+    }
+
     fun back() {
         if (!uiState.busy) {
             val screen =
@@ -69,9 +85,11 @@ class PhoneHaulViewModel(
                     Screen.MEDIA, Screen.REVIEW -> Screen.SELECT
                     Screen.SELECT -> Screen.START
                     Screen.ABOUT -> Screen.START
+                    Screen.DISCLOSE -> Screen.START
                     else -> uiState.screen
                 }
-            uiState = uiState.copy(error = null, screen = screen)
+            pendingAfterDisclosure = null
+            uiState = uiState.copy(error = null, screen = screen, disclosure = null)
         }
     }
 

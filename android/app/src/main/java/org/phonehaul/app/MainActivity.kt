@@ -142,8 +142,10 @@ class MainActivity : ComponentActivity() {
             !preferences.getBoolean("notification_permission_requested", false)
         ) {
             pendingTransfer = mode
-            preferences.edit().putBoolean("notification_permission_requested", true).apply()
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            model.showDisclosure(Disclosure.NOTIFICATIONS) {
+                preferences.edit().putBoolean("notification_permission_requested", true).apply()
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         } else {
             model.startTransfer(mode)
         }
@@ -153,7 +155,7 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             model.startScan()
         } else {
-            cameraPermission.launch(Manifest.permission.CAMERA)
+            model.showDisclosure(Disclosure.CAMERA) { cameraPermission.launch(Manifest.permission.CAMERA) }
         }
     }
 
@@ -175,7 +177,7 @@ class MainActivity : ComponentActivity() {
         if (permissions.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
             model.openMedia()
         } else {
-            mediaPermissions.launch(permissions)
+            model.showDisclosure(Disclosure.MEDIA) { mediaPermissions.launch(permissions) }
         }
     }
 }
@@ -219,6 +221,14 @@ private fun App(
                     }
                     Text("Launch PhoneHaul Receiver on your computer to display the QR code.")
                     TextButton(onClick = vm::openAbout) { Text("About & privacy policy") }
+                }
+                Screen.DISCLOSE -> {
+                    Heading("Before you continue")
+                    Text(disclosureText(vm.uiState.disclosure))
+                    Text("Nothing is sent to the Internet or to any third party.")
+                    Text("The full privacy policy is on the About screen.")
+                    Button(onClick = vm::acceptDisclosure, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
+                    TextButton(onClick = vm::back) { Text("Not now") }
                 }
                 Screen.SCAN -> {
                     Heading("Scan the computer QR")
@@ -406,6 +416,20 @@ private fun App(
 
 @Composable private fun Heading(text: String) {
     Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+}
+
+private fun disclosureText(disclosure: Disclosure?): String {
+    val common =
+        "PhoneHaul reads the files you select and sends them, with their name, path, size and hash, " +
+            "to the computer you pair with on your local network. Nothing is sent to the Internet or to any third party."
+    val specific =
+        when (disclosure) {
+            Disclosure.CAMERA -> "Camera access is only for reading the pairing QR code; frames are never saved or sent."
+            Disclosure.NOTIFICATIONS -> "Notifications are only for the ongoing notification while a transfer runs."
+            Disclosure.MEDIA -> "Media access lets you browse photos and videos so you can select them for transfer."
+            null -> "Declining keeps the rest of the app usable."
+        }
+    return "$common $specific"
 }
 
 @Composable private fun SelectedSummary(vm: PhoneHaulViewModel) {
