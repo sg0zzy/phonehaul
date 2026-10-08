@@ -233,22 +233,15 @@ class ReceiverClient(
             }
             val actualHash = hash.hexDigest()
             val response = readResponse(conn)
-            val status = response.getString("status")
-            if (status != "committed" &&
-                status != "skipped" &&
-                status != "already_present"
-            ) {
-                throw IOException("Unexpected receiver acknowledgement")
-            }
-            if (status != "skipped" &&
-                (
-                    response.optLong("size", -1) != file.size ||
-                        response.optString("sha256") != actualHash ||
-                        (file.sha256 != null && file.sha256 != actualHash)
+            val status =
+                AckValidation.validate(
+                    response.getString("status"),
+                    response.optLong("size", -1),
+                    response.optString("sha256"),
+                    file.sha256,
+                    file.size,
+                    actualHash,
                 )
-            ) {
-                throw IOException("Receiver acknowledgement mismatch")
-            }
             return UploadResult(status)
         } finally {
             conn.disconnect()

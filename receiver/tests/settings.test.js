@@ -10,6 +10,7 @@ import {
   parseXdgDownloadsDirectory,
   settingsDirectory,
   settingsFilePath,
+  saveSettings,
 } from '../src/settings/store.js';
 
 test('settings use XDG_CONFIG_HOME on Linux and home fallback', () => {
@@ -154,6 +155,44 @@ test('first launch creates and persists the default PhoneHaul destination', asyn
     assert.equal(path.basename(path.dirname(settings.destination)), 'Downloads');
     assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), settings);
     assert.equal((await stat(settings.destination)).isDirectory(), true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('settings are written with owner-only permissions', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-settings-mode-'));
+  const file = path.join(directory, 'config', 'settings.json');
+  try {
+    const settings = { destination: path.join(directory, 'dest'), conflict: 'replace' };
+    assert.deepEqual(await saveSettings(settings, file), settings);
+    assert.equal((await stat(file)).mode & 0o777, 0o600);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('corrupt or invalid settings are reported instead of silently defaulting', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-settings-invalid-'));
+  const file = path.join(directory, 'settings.json');
+  try {
+    await writeFile(file, '{ destination: ');
+    await assert.rejects(
+      () => loadSettings(file),
+      (error) => error instanceof SyntaxError,
+    );
+    await writeFile(file, JSON.stringify({ destination: 'relative/path', conflict: 'rename' }));
+    await assert.rejects(() => loadSettings(file), /Invalid settings/);
+    await writeFile(
+      file,
+      JSON.stringify({ destination: path.join(directory, 'dest'), conflict: 'overwrite' }),
+    );
+    await assert.rejects(() => loadSettings(file), /Invalid settings/);
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), {
+      destination: path.join(directory, 'dest'),
+      conflict: 'overwrite',
+    });
+    await assert.rejects(() => stat(path.join(directory, 'dest')), { code: 'ENOENT' });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 import { startReceiver } from './app.js';
 
+function managedHeartbeatTimeout() {
+  if (process.env.PHONEHAUL_DESKTOP_MANAGED !== '1') return null;
+  const value = Number(process.env.PHONEHAUL_HEARTBEAT_TIMEOUT_MS ?? 15_000);
+  if (!Number.isFinite(value) || value <= 0)
+    throw Error('PHONEHAUL_HEARTBEAT_TIMEOUT_MS must be a positive number of milliseconds');
+  return value;
+}
+
 async function main() {
   let receiver;
   try {
     const transferPort = Number(process.env.PHONEHAUL_TRANSFER_PORT ?? 57322);
     if (!Number.isInteger(transferPort) || transferPort < 0 || transferPort > 65535)
       throw Error('PHONEHAUL_TRANSFER_PORT must be a port from 0 to 65535');
+    const heartbeatTimeoutMs = managedHeartbeatTimeout();
     receiver = await startReceiver({
       openBrowser: process.env.PHONEHAUL_NO_BROWSER !== '1',
       transferPort,
@@ -14,9 +23,6 @@ async function main() {
       exitOnUiClose: process.env.PHONEHAUL_EXIT_ON_UI_CLOSE === '1',
     });
     if (process.env.PHONEHAUL_DESKTOP_MANAGED === '1') {
-      const heartbeatTimeoutMs = Number(process.env.PHONEHAUL_HEARTBEAT_TIMEOUT_MS ?? 15_000);
-      if (!Number.isFinite(heartbeatTimeoutMs) || heartbeatTimeoutMs <= 0)
-        throw Error('PHONEHAUL_HEARTBEAT_TIMEOUT_MS must be a positive number of milliseconds');
       let stopping = false;
       const stop = async () => {
         if (stopping) return;

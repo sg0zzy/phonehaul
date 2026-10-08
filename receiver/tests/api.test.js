@@ -529,3 +529,160 @@ test('computer to phone uses paired HTTPS session and preserves ordered relative
     await receiver.close();
   }
 });
+
+test('unknown API routes return 404 and oversized JSON bodies return 400', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-api-errors-'));
+  const settingsFile = path.join(root, 'settings.json');
+  await writeFile(
+    settingsFile,
+    JSON.stringify({ destination: path.join(root, 'dest'), conflict: 'rename' }),
+  );
+  const receiver = await startReceiver({ host: '127.0.0.1', transferPort: 0, settingsFile });
+  try {
+    assert.equal((await request(receiver, 'POST', '/api/session/connect')).status, 200);
+    assert.deepEqual(await request(receiver, 'GET', '/api/nope'), {
+      status: 404,
+      body: { error: 'Not found' },
+    });
+    const uiNotFound = await localRequest(receiver.uiUrl, '/api/nope');
+    assert.equal(uiNotFound.status, 404);
+    assert.equal(JSON.parse(uiNotFound.body).error, 'Not found');
+    const oversized = 'x'.repeat(10 * 1024 * 1024 + 1);
+    const tooLarge = await request(receiver, 'POST', '/api/transfers', oversized);
+    assert.equal(tooLarge.status, 400);
+    assert.equal(tooLarge.body.error, 'Request too large');
+    const uiTooLarge = await localRequest(receiver.uiUrl, '/api/settings', {
+      method: 'POST',
+      data: oversized,
+    });
+    assert.equal(uiTooLarge.status, 400);
+    assert.equal(JSON.parse(uiTooLarge.body).error, 'Request too large');
+  } finally {
+    await receiver.close();
+  }
+});
+
+test('the destination stays locked while a transfer is running', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-settings-lock-'));
+  const settingsFile = path.join(root, 'settings.json');
+  const destination = path.join(root, 'dest');
+  await writeFile(settingsFile, JSON.stringify({ destination, conflict: 'rename' }));
+  const receiver = await startReceiver({ host: '127.0.0.1', transferPort: 0, settingsFile });
+  try {
+    assert.equal((await request(receiver, 'POST', '/api/session/connect')).status, 200);
+    const created = await request(
+      receiver,
+      'POST',
+      '/api/transfers',
+      JSON.stringify({
+        protocol: 1,
+        operation: 'move',
+        items: [{ id: 'a', type: 'file', relativePath: 'photo.jpg', size: 3 }],
+      }),
+    );
+    assert.equal(created.status, 201);
+    const change = JSON.stringify({ destination: path.join(root, 'other'), conflict: 'skip' });
+    const blocked = await localRequest(receiver.uiUrl, '/api/settings', {
+      method: 'POST',
+      data: change,
+    });
+    assert.equal(blocked.status, 400);
+    assert.equal(JSON.parse(blocked.body).error, 'Cannot change destination during transfer');
+    assert.equal((await uiRequest(receiver.uiUrl, '/api/ui')).settings.destination, destination);
+    await request(receiver, 'POST', `/api/transfers/${created.body.transferId}/cancel`);
+    const changed = await localRequest(receiver.uiUrl, '/api/settings', {
+      method: 'POST',
+      data: change,
+    });
+    assert.equal(changed.status, 200);
+    assert.deepEqual(JSON.parse(changed.body), {
+      destination: path.join(root, 'other'),
+      conflict: 'skip',
+    });
+  } finally {
+    await receiver.close();
+  }
+});
+
+test('a file in flight to the phone blocks a new transfer', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-send-active-'));
+  const settingsFile = path.join(root, 'settings.json');
+  await writeFile(
+    settingsFile,
+    JSON.stringify({ destination: path.join(root, 'dest'), conflict: 'rename' }),
+  );
+  const receiver = await startReceiver({ host: '127.0.0.1', transferPort: 0, settingsFile });
+  try {
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          'X-PhoneHaul-Capabilities': 'send-to-phone',
+        })
+      ).status,
+      200,
+    );
+    const queued = await localRequest(receiver.uiUrl, '/api/send/items', {
+      method: 'POST',
+      headers: { 'X-PhoneHaul-Relative-Path': encodeURIComponent('Project/spec.txt') },
+      data: 'alpha',
+    });
+    assert.equal(queued.status, 201);
+    const active = await request(receiver, 'GET', '/api/send/next');
+    assert.equal(active.status, 200);
+    assert.equal(active.body.relativePath, 'Project/spec.txt');
+    assert.equal(receiver.sendQueue.active.id, JSON.parse(queued.body).id);
+    const blocked = await request(
+      receiver,
+      'POST',
+      '/api/transfers',
+      JSON.stringify({
+        protocol: 1,
+        operation: 'move',
+        items: [{ id: 'b', type: 'file', relativePath: 'photo.jpg', size: 3 }],
+      }),
+    );
+    assert.equal(blocked.status, 400);
+    assert.equal(blocked.body.error, 'Phone is receiving a file; retry shortly');
+  } finally {
+    await receiver.close();
+  }
+});
+
+test('the offline window applies only to send-capable sessions', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-offline-window-'));
+  const settingsFile = path.join(root, 'settings.json');
+  await writeFile(
+    settingsFile,
+    JSON.stringify({ destination: path.join(root, 'dest'), conflict: 'rename' }),
+  );
+  const receiver = await startReceiver({
+    host: '127.0.0.1',
+    transferPort: 0,
+    settingsFile,
+    phoneOfflineWindowMs: 0,
+  });
+  try {
+    const before = receiver.session.token;
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          'X-PhoneHaul-Capabilities': 'send-to-phone',
+        })
+      ).status,
+      200,
+    );
+    const replaced = await localRequest(receiver.uiUrl, '/api/qr/refresh', { method: 'POST' });
+    assert.equal(replaced.status, 200);
+    assert.equal(JSON.parse(replaced.body).status, 'ready');
+    assert.notEqual(receiver.session.token, before);
+    assert.equal((await request(receiver, 'POST', '/api/session/connect')).status, 200);
+    const state = await uiRequest(receiver.uiUrl, '/api/ui');
+    assert.equal(state.connected, true);
+    assert.equal(state.sendConnected, false);
+    const refused = await localRequest(receiver.uiUrl, '/api/qr/refresh', { method: 'POST' });
+    assert.equal(refused.status, 400);
+    assert.equal(JSON.parse(refused.body).error, 'Session already connected');
+  } finally {
+    await receiver.close();
+  }
+});

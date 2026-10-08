@@ -52,13 +52,8 @@ test('browser opening reports synchronous failures and does not throw', () => {
   assert.equal(failures.length, 1);
 });
 
-test('send card has file and folder pickers and its browser script parses', () => {
-  const html = page();
-  assert.match(html, /<h2>Send to phone<\/h2>/);
-  assert.match(html, /id="sendFiles" type="file" multiple/);
-  assert.match(html, /id="sendFolder" type="file" webkitdirectory multiple/);
-  assert.match(html, /directly to Downloads on Android/);
-  const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+test('the browser script in the management page parses', () => {
+  const script = page().match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script);
   assert.doesNotThrow(() => new vm.Script(script));
 });

@@ -168,3 +168,52 @@ test('desktop managed mode stops when supervisor heartbeats stop arriving', asyn
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+async function runManaged(env) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-managed-env-'));
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(new URL('../src/server/main.js', import.meta.url))],
+    {
+      env: {
+        ...process.env,
+        PHONEHAUL_DESKTOP_MANAGED: '1',
+        PHONEHAUL_NO_BROWSER: '1',
+        PHONEHAUL_SETTINGS_FILE: path.join(directory, 'settings.json'),
+        ...env,
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+  child.stderr.setEncoding('utf8');
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const exit = once(child, 'exit');
+  const close = once(child, 'close');
+  try {
+    const [code] = await exit;
+    await close;
+    return { code, stderr };
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+test('desktop managed mode rejects an out-of-range transfer port', async () => {
+  const { code, stderr } = await runManaged({ PHONEHAUL_TRANSFER_PORT: '65536' });
+  assert.equal(code, 1);
+  assert.equal(stderr.trim(), 'PHONEHAUL_TRANSFER_PORT must be a port from 0 to 65535');
+});
+
+test('desktop managed mode rejects a non-positive heartbeat timeout', async () => {
+  const message = 'PHONEHAUL_HEARTBEAT_TIMEOUT_MS must be a positive number of milliseconds';
+  const { code, stderr } = await runManaged({
+    PHONEHAUL_TRANSFER_PORT: '0',
+    PHONEHAUL_HEARTBEAT_TIMEOUT_MS: '0',
+  });
+  assert.equal(code, 1);
+  assert.equal(stderr.trim(), message);
+});

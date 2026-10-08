@@ -209,9 +209,9 @@ export class TransferReceiver {
     const meter = new Transform({
       transform(chunk, encoding, callback) {
         bytes += chunk.length;
+        t.receivedBytes += chunk.length;
         if (bytes > item.size) return callback(new Error('Size mismatch'));
         hash.update(chunk);
-        t.receivedBytes += chunk.length;
         callback(null, chunk);
       },
     });

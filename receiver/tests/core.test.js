@@ -6,7 +6,7 @@ import { mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { relativePath, safeParent } from '../src/security/paths.js';
-import { PairingSession, localAddress } from '../src/security/pairing.js';
+import { PairingSession, localAddress, isPrivateIPv4 } from '../src/security/pairing.js';
 import { validateManifest } from '../src/transfer/manifest.js';
 import { TransferReceiver } from '../src/transfer/receiver.js';
 
@@ -88,6 +88,24 @@ test('prefers a physical LAN interface over virtual adapters', () => {
     }),
     '192.168.1.20',
   );
+  assert.throws(() => localAddress({ lo: [entry('127.0.0.1')] }), /No private LAN IPv4/);
+});
+
+test('only private IPv4 ranges count as LAN addresses', () => {
+  for (const address of ['10.0.0.5', '172.16.0.1', '172.31.255.255', '192.168.1.20', '169.254.1.1'])
+    assert.equal(isPrivateIPv4(address), true);
+  for (const address of [
+    '172.15.0.1',
+    '172.32.0.1',
+    '192.169.1.1',
+    '8.8.8.8',
+    '127.0.0.1',
+    '10.0.0.256',
+    'fe80::1',
+    'not-an-address',
+    '',
+  ])
+    assert.equal(isPrivateIPv4(address), false);
 });
 
 test('commits verified data and renames collisions', async () => {

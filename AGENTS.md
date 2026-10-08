@@ -41,7 +41,8 @@ Rust (desktop) and Kotlin (android) gates run in CI; for local edits use:
 
 ## Testing
 
-- **Unit tests**: `receiver/src/**/*.test.js` (Jest).
+- **Unit tests**: `receiver/tests/*.test.js` (node:test, run with
+  `npm test`, which passes `--experimental-test-module-mocks`).
 - **Smoke / end-to-end**: `integration-tests/smoke.js` — run via
   `npm run smoke`.
 - **Don't test** wiring, copies, forwarding, mock echoes, source text, or

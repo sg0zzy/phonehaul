@@ -29,7 +29,7 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Fix Rust UTF-8 streaming, with a split-byte regression test.
   - [x] Fix the AppImage ARM path and Android release version code.
   - [x] Collapse pairing to two states — connected or not connected — with the QR shown whenever not connected. `PairingSession.connected` was sticky because Android's Done button never notifies the receiver, so `pairingComplete` stayed true forever. A paired phone that declared `send-to-phone` and stays quiet for 15 s (`phoneOfflineWindowMs`) now ends the session, fails the active send item with `Phone disconnected`, and generates a new QR. `pairingComplete` is removed; both UIs read `connected`. Regression test in `receiver/tests/api.test.js`.
-  - [x] Stop the desktop sidecar when supervisor heartbeats stop arriving, so a desktop app killed without running its exit hook does not leave the receiver running. The Rust backend writes a `heartbeat` line to the sidecar's stdin every 5 s; managed mode exits 15 s after the last one (`PHONEHAUL_HEARTBEAT_TIMEOUT_MS`), armed on the first heartbeat. Regression tests in `receiver/tests/managed.test.js` and `desktop/src-tauri/src/main.rs`.
+  - [x] Stop the desktop sidecar when supervisor heartbeats stop arriving, so a desktop app killed without running its exit hook does not leave the receiver running. The Rust backend writes a `heartbeat` line to the sidecar's stdin every 5 s; managed mode exits 15 s after the last one (`PHONEHAUL_HEARTBEAT_TIMEOUT_MS`), armed on the first heartbeat. Regression tests in `receiver/tests/managed.test.js` (SIGTERM, stdin EOF, heartbeat timeout) and `desktop/src-tauri/src/main.rs` (`exit_hook_terminates_the_sidecar`, `heartbeat_loop_writes_periodically_and_stops_with_the_sidecar`).
 - [x] Phase 4 — Refactoring.
   - [x] Simplify Android ViewModel state and extract transfer runner and shared helpers. Gradle gate green (2026-10-04); `TransferRunner.kt`, `Hashing.kt`, `Names.kt` extracted and in use; dead code (`SourceKind`, `MediaEntry.isScreenshot`, `clearError`) removed; delete decision driven by `TransferState.canDeleteSource`.
   - [x] Consolidate the ViewModel's screen-level fields into one immutable `UiState` data class; `MainActivity` reads them via `model.uiState`. Verified: `:app:assembleDebug` green (fresh `compileDebugKotlin`), `:app:test` 14/14 pass (0 failures/errors/skipped), fidelity diff vs the git original confirms no logic dropped, and single-writer threading analysis confirms no lost byte-callback updates.
@@ -360,3 +360,60 @@ Receiver: npm run check from the root. This covers format, lint, unit tests and 
 Android: cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck, plus the emulator rotation check in Phase 3.
 Desktop: cd desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test; npm run desktop:dev launches the app; drop a file, then pair and transfer with the fake sender.
 CI: push a phase branch only with your approval, and confirm the workflow runs green.
+
+Work log (2026-10-08): Accepted test gaps filled. `npm run check` passes with
+89/89 receiver tests (36/36 at the 2026-10-02 baseline) and the integration
+smoke test; measured coverage is now 96.46% line / 92.15% branch / 88.10%
+functions (93%/78% at the baseline). Android `:app:testDebugUnitTest
+:app:lintDebug :app:ktlintCheck` passes with 28/28 tests and no new lint
+issues. No Rust changes, so the Rust gate was not re-run.
+
+New receiver tests, by area: 507 with `available` bytes and the late-item case;
+`replace` policy plus its non-file/symlink guard; upload guards and the full PUT
+ack shape (`status,size,sha256,destination`); exFAT fallback codes (`ENOTSUP`,
+`EPERM`, `EXDEV`) and the conflict limit; `SendQueue` error and folder
+precedence rules; `validateManifest` boundaries and normalization; `findPartials`
+and `POST /api/partials/remove`; `relativePath` control characters and the
+`safeDirectory` guard; HTTP error mapping and `MAX_JSON`; session precedence and
+`close()` cancel; `main.js` env validation; settings edge cases.
+
+Tautology deleted: `receiver/tests/browser.test.js` asserted literal HTML source
+text. It now parses the page's `<script>` with `new vm.Script()` and asserts it
+does not throw — observable behavior instead of a source-text copy.
+
+Android seam without a new dependency: the acknowledgement guard from
+`ReceiverClient.kt` was extracted into `AckValidation.kt` as a pure function over
+primitives (`org.json.JSONObject` is stubbed on the JVM unit-test classpath), so
+it is testable with the existing JUnit 4 dependency. New tests:
+`AckValidationTest.kt` (5), `NamesTest.kt` (4), `HashingTest.kt` (2), and 3
+appended to `PairingTest.kt`. Framework-bound modules (`Selection.kt`,
+`MediaRepository.kt`, `PhoneInbox.kt`, `PhoneHaulViewModel.kt`,
+`TransferRunner.kt`, `TransferService.kt`, `QrScanner.kt`) remain uncovered
+because they need `Context`/`ContentResolver`/`Uri` or an emulator; no emulator
+is attached on this host, so Kotlin behavior is provable only through
+`:app:testDebugUnitTest`.
+
+Two source bugs found while closing the gaps, both fixed:
+
+1. `receiver/src/transfer/receiver.js` — the upload meter credited
+   `t.receivedBytes` only for chunks that passed the declared-size check, while
+   the failure handler subtracted every received byte, so an oversized stream
+   drove `summary().receivedBytes` negative (observed `-7` for a 7-byte item
+   before the fix, `0` after). The meter now credits before the size check, so
+   the two agree. Regression assertion in `receiver/tests/upload.test.js`.
+2. `receiver/src/server/main.js` — `PHONEHAUL_HEARTBEAT_TIMEOUT_MS` was validated
+   after `startReceiver`, so `process.exitCode = 1` never took effect: the
+   listening server holds the event loop, the managed sidecar printed the error,
+   never printed `PHONEHAUL_READY`, and ran forever with no heartbeat monitor.
+   Validation now happens in `managedHeartbeatTimeout()` before `startReceiver`,
+   so both env-validation paths exit deterministically with code 1. Regression
+   tests in `receiver/tests/managed.test.js` (out-of-range port, non-positive
+   heartbeat timeout).
+
+`Hashing.kt` `"%02x".format(it)` was checked as a suspected negative-byte bug and
+is not one: `String.format("%02x", (byte) -1)` yields `ff` on JDK 21. The
+remaining `HashingTest.kt` tests pin unsigned-byte hex and partial-update
+equivalence; the digest-reset test was dropped as incidental behavior.
+
+`AGENTS.md` was corrected: unit tests are node:test files in
+`receiver/tests/*.test.js`, not Jest under `receiver/src/`.
