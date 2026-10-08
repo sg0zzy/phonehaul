@@ -3,6 +3,14 @@
 Move files between an Android phone and a computer over your local network.
 No cloud, no server to run beyond the receiver itself, and no account.
 
+## Download PhoneHaul Desktop
+
+PhoneHaul requires a desktop companion application.
+
+🐧 **Linux:** [Download AppImage](https://github.com/sg0zzy/phonehaul/releases/latest)
+
+🪟 **Windows:** Coming soon on Microsoft Store
+
 ## How it works
 
 1. Run the receiver on your computer (or the desktop app, which runs one for
