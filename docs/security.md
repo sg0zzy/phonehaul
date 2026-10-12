@@ -11,7 +11,7 @@ destination address and certificate fingerprint before sending data.
 Incoming files are validated end to end before they are written to the destination:
 
 - **Manifest validation.** `POST /api/transfers` is checked against
-  [manifest.js](../receiver/src/transfer/manifest.js): absolute paths, backslashes,
+  [manifest.js](https://github.com/sg0zzy/phonehaul/blob/main/receiver/src/transfer/manifest.js): absolute paths, backslashes,
   empty segments, `.`/`..`, duplicate IDs/paths, and oversized entries (64 GiB
   cap) are rejected.
 - **Symlink traversal.** The receiver `lstat`s every destination parent to

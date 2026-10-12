@@ -234,7 +234,8 @@ fn launch(app: &tauri::AppHandle) -> Result<Service, String> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::{
-        drain_stdout, heartbeat_loop, stop, take_sse_events, Service, Shared, HEARTBEAT_INTERVAL,
+        drain_stdout, heartbeat_loop, running, stop, take_sse_events, Service, Shared,
+        HEARTBEAT_INTERVAL,
     };
     use parking_lot::Mutex;
     use std::{
@@ -341,6 +342,43 @@ mod tests {
         stop(&mut shared.lock());
         handle.join().unwrap();
         assert_eq!(heartbeats(&recorder), written);
+    }
+
+    #[test]
+    fn exit_hook_terminates_the_sidecar() {
+        // Stand-in for the sidecar: it exits on SIGTERM like managed mode does.
+        let child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("trap 'exit 0' TERM; sleep 30")
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let mut service = Service {
+            child: Some(child),
+            stdin: None,
+            root: String::new(),
+            host: String::new(),
+            port: 0,
+            error: None,
+        };
+        assert!(
+            running(&mut service),
+            "sidecar is alive before the exit hook"
+        );
+        let started = Instant::now();
+        stop(&mut service);
+        // A sidecar that ignored the signal would keep wait() blocked for the full
+        // 30 s, so a prompt return plus a vanished pid is the observable kill.
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "exit hook must terminate the sidecar, not wait for it"
+        );
+        assert!(!running(&mut service), "sidecar outlived the exit hook");
+        assert_eq!(
+            unsafe { libc::kill(pid as i32, 0) },
+            -1,
+            "sidecar pid {pid} is still alive after the exit hook"
+        );
     }
 }
 async fn request_json(

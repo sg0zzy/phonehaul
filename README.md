@@ -97,6 +97,8 @@ build matrix, environment variables, and per-platform notes.
 
 ## Documentation
 
+Published site: <https://sg0zzy.github.io/phonehaul/> (built from `docs/`).
+
 - [Developer guide — builds, release, env vars, settings](docs/development.md)
 - [Protocol](docs/protocol.md)
 - [Security model](docs/security.md)

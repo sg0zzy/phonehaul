@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PhoneHaul — Documentation</title>
+    <meta
+      name="description"
+      content="Documentation for PhoneHaul: move files between an Android phone and a computer over the local network. Developer guide, protocol, security model, architecture, and privacy policy."
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        max-width: 46rem;
+        margin: 2.5rem auto;
+        padding: 0 1.25rem 3rem;
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        color: #1b1b1b;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: #e6e6e6;
+        }
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin-top: 0;
+      }
+      h2 {
+        font-size: 1.2rem;
+        margin-top: 2rem;
+      }
+      p,
+      li {
+        max-width: 60ch;
+      }
+      a {
+        color: #0969da;
+      }
+      @media (prefers-color-scheme: dark) {
+        a {
+          color: #4493f8;
+        }
+      }
+      dl {
+        margin: 1rem 0;
+      }
+      dt {
+        font-weight: 600;
+        margin-top: 1rem;
+      }
+      dd {
+        margin: 0.15rem 0 0 0;
+        color: #444;
+      }
+      @media (prefers-color-scheme: dark) {
+        dd {
+          color: #b8b8b8;
+        }
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+      }
+      .meta {
+        color: #666;
+        font-size: 0.9rem;
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(128, 128, 128, 0.35);
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>PhoneHaul</h1>
+      <p class="meta">
+        Move files between an Android phone and a computer over your local network. No cloud, no
+        account, no Internet relay.
+      </p>
+
+      <h2>Downloads</h2>
+      <ul>
+        <li>
+          <a href="https://github.com/sg0zzy/phonehaul#readme">Product overview and downloads</a>
+          — the README: what PhoneHaul is, which build to pick, and troubleshooting.
+        </li>
+        <li>
+          <a href="https://github.com/sg0zzy/phonehaul/releases/latest">Latest release</a> (Linux
+          AppImage, desktop installers, Android APK)
+        </li>
+        <li><a href="https://github.com/sg0zzy/phonehaul/issues">Issues</a></li>
+      </ul>
+
+      <h2>Documentation</h2>
+      <dl>
+        <dt><a href="development.html">Developer guide</a></dt>
+        <dd>
+          Build, run, test, and release the receiver, desktop app, and Android app; environment
+          variables, settings, and the release workflow.
+        </dd>
+        <dt><a href="protocol.html">Transfer protocol v1</a></dt>
+        <dd>QR pairing payload, endpoints, request/response bodies, and error codes.</dd>
+        <dt><a href="security.html">Security model</a></dt>
+        <dd>
+          Pairing capability, certificate pinning, incoming-file validation, and the loopback guard.
+        </dd>
+        <dt><a href="architecture.html">Architecture</a></dt>
+        <dd>How the receiver, desktop sidecar, and Android app fit together.</dd>
+        <dt><a href="privacy.html">Privacy policy</a></dt>
+        <dd>
+          What the Android app reads, transmits, and stores — the policy linked from the app and the
+          Google Play listing.
+        </dd>
+      </dl>
+
+      <h2>Contributing</h2>
+      <ul>
+        <li>
+          <a href="https://github.com/sg0zzy/phonehaul/blob/main/AGENTS.md"
+            >Rules for contributors and AI agents</a
+          >
+        </li>
+        <li>
+          <a href="REFACTORING_andre.html">Internal review notes and phased fix plan</a>
+          (work-in-progress; not user-facing)
+        </li>
+      </ul>
+    </main>
+
+    <footer>
+      <p class="meta">
+        Source: <a href="https://github.com/sg0zzy/phonehaul">github.com/sg0zzy/phonehaul</a> · this
+        site is published from the <code>docs/</code> folder by GitHub Pages.
+      </p>
+    </footer>
+  </body>
+</html>

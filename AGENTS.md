@@ -7,13 +7,16 @@ Durable rules for AI-assisted and human contributors. Read this before editing.
 Run the full gate and get it to pass:
 
 ```sh
-npm run check          # = check:format && lint && test && smoke
+npm run check          # = check:format && lint && check:docs && test && smoke
 ```
 
 - **format** — Prettier auto-fixes; `npm run format` applies it. Do not hand-format.
 - **lint** — ESLint over `receiver/`, `desktop/`, `integration-tests/`.
 - **test** — receiver unit tests.
 - **smoke** — `integration-tests/smoke.js` end-to-end.
+- **check:docs** — `integration-tests/check-docs-links.js` validates the
+  GitHub Pages site published from `docs/` (offline: relative links, anchors,
+  index coverage, repo blob links against the working tree).
 
 Rust (desktop) and Kotlin (android) gates run in CI; for local edits use:
 - Rust: `cargo fmt --check` · `cargo clippy -- -D warnings` · `cargo test` (in `desktop/src-tauri`)
@@ -63,6 +66,14 @@ Rust (desktop) and Kotlin (android) gates run in CI; for local edits use:
   label them as such. Do not claim they were run if they were not.
 - Verify every command you document by running it (on the matching platform
   when possible). Verify every relative link resolves.
+- **`docs/` is the GitHub Pages source** (Settings → Pages: branch `main`,
+  folder `/docs`), served at `https://sg0zzy.github.io/phonehaul/`.
+  `docs/index.html` is the site root and must link every published page.
+  Nothing in `docs/` may link outside `docs/` (`../README.md` 404s on the
+  site); link repo files as
+  `https://github.com/sg0zzy/phonehaul/blob/main/<path>`. `npm run check:docs`
+  enforces this. `docs/privacy.html` is the policy URL the Android app and
+  Google Play Console point at — keep it published at that exact path.
 - Update the Phase checkboxes in `docs/REFACTORING_andre.md` as work lands,
   then commit.
 

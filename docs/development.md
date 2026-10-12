@@ -2,7 +2,7 @@
 
 Build, run, test, and release the PhoneHaul receiver, desktop app, and Android app.
 
-This guide is the single source of truth for **developer** tasks (build, release, env vars, settings). User-facing docs (what it is, how to download/use, troubleshooting) live in [README.md](../README.md).
+This guide is the single source of truth for **developer** tasks (build, release, env vars, settings). User-facing docs (what it is, how to download/use, troubleshooting) live in [README.md](https://github.com/sg0zzy/phonehaul/blob/main/README.md).
 
 ## Repository layout
 
@@ -28,7 +28,7 @@ This guide is the single source of truth for **developer** tasks (build, release
 
 | Area | Toolchain | Install |
 |------|-----------|---------|
-| Node (all) | **Node.js 24** — [.nvmrc](../.nvmrc) pins `24.21.0` | `nvm use` (or install 24) |
+| Node (all) | **Node.js 24** — [.nvmrc](https://github.com/sg0zzy/phonehaul/blob/main/.nvmrc) pins `24.21.0` | `nvm use` (or install 24) |
 | receiver | Node 24 | `npm ci --prefix receiver` |
 | desktop (Tauri) | Node 24 + Rust | `npm ci --prefix receiver && npm ci --prefix desktop` |
 | desktop (Tauri, Linux) | Rust + GTK/WebKit2 dev libs | see **Linux** below |
@@ -54,7 +54,7 @@ Settings persist to the settings file (see **Settings** below).
 
 ## Running the desktop app (Tauri)
 
-The desktop app **bundles the receiver** (`phonehaul-server`) and launches it as a child process. It does **not** use a fixed LAN port — the sidecar picks a **random** port each launch (see [README](../README.md#troubleshooting)).
+The desktop app **bundles the receiver** (`phonehaul-server`) and launches it as a child process. It does **not** use a fixed LAN port — the sidecar picks a **random** port each launch (see [README](https://github.com/sg0zzy/phonehaul/blob/main/README.md#troubleshooting)).
 
 ```sh
 # from the repo root
@@ -129,7 +129,7 @@ Run either:
 
 > **Note:** the standalone receiver AppImage is **Linux-only**. On Linux you
 > also have the *desktop* app's AppImage — see
-> [README](../README.md#which-appimage-do-i-pick-on-linux) for which one to pick.
+> [README](https://github.com/sg0zzy/phonehaul/blob/main/README.md#which-appimage-do-i-pick-on-linux) for which one to pick.
 
 ## Building the Android app
 
@@ -296,13 +296,15 @@ open('desktop/src-tauri/icons/icon.icns', 'wb').write(b'icns' + struct.pack('>I'
 **Canonical gate (root):**
 
 ```sh
-npm run check          # = check:format && lint && test && smoke
+npm run check          # = check:format && lint && check:docs && test && smoke
 ```
 
 - `check:format` — `prettier --check` over `receiver/`, `desktop/`, `integration-tests/`, `protocol/`, `package.json`
 - `lint` — ESLint over `receiver`, `desktop`, `integration-tests`
 - `test` — `npm --prefix receiver test` (unit tests)
 - `smoke` — `node integration-tests/smoke.js` (integration smoke)
+- `check:docs` — `node integration-tests/check-docs-links.js` (validates the
+  GitHub Pages site published from `docs/`; see **Documentation site** below)
 
 Per area:
 
@@ -313,7 +315,25 @@ Per area:
 | android (Kotlin) | `./gradlew :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck` |
 
 Formatting is automatic (Prettier/`cargo fmt`); run `npm run check` before
-committing. See [AGENTS.md](../AGENTS.md) for durable contributor rules.
+committing. See [AGENTS.md](https://github.com/sg0zzy/phonehaul/blob/main/AGENTS.md) for durable contributor rules.
+
+## Documentation site
+
+`docs/` **is** the GitHub Pages source (Settings → Pages → Build and deployment:
+branch `main`, folder `/docs`). It publishes to
+`https://sg0zzy.github.io/phonehaul/` on every push to `main`.
+
+- `docs/index.html` is the site root and links every published page.
+- Pages runs Jekyll: each `docs/*.md` is also published as `.html` (e.g.
+  `protocol.md` → `protocol.html`), and `privacy.html` is served as-is.
+- **Nothing in `docs/` may link outside `docs/`.** The published site has no
+  parent directory, so `../README.md` 404s there. Link repository files as
+  `https://github.com/sg0zzy/phonehaul/blob/main/<path>`; link sibling docs by
+  file name (`security.md` or `security.html` — both resolve).
+- `npm run check:docs` enforces all of the above offline (relative targets,
+  `#anchors`, index coverage, and blob links against the working tree).
+- `docs/privacy.html` is the URL the Android app and the Google Play Console
+  point at; keep it published at that exact path.
 
 ## Release workflow
 
