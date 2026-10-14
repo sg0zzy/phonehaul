@@ -149,16 +149,20 @@ See **Release workflow** below.
 
 ### Linux (Tauri)
 
-Install Tauri's native dependencies, then build the AppImage:
+Requires **Node 24**, **Rust**, and Tauri's native dependencies. The script
+installs receiver and desktop npm dependencies and builds the desktop AppImage
+with its bundled receiver sidecar:
 
 ```sh
 sudo apt-get install --yes build-essential curl wget file libssl-dev libxdo-dev \
   libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
   libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libldap2-dev libfuse2 patchelf
 
-npm run desktop:build -- --bundles appimage
+bash scripts/build-desktop-linux.sh
 # -> desktop/src-tauri/target/release/bundle/appimage/PhoneHaul_*.AppImage
 ```
+
+`scripts/build-appimage.sh` builds the standalone receiver AppImage instead.
 
 ### Windows (Tauri, Git Bash)
 

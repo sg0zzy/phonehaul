@@ -39,6 +39,7 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Update README and developer documentation.
   - [x] Update protocol, security, and architecture docs; add durable contributor guidance.
   - [x] Check documented commands and links.
+  - [x] Add and document `scripts/build-desktop-linux.sh` alongside the macOS and Windows desktop scripts. Verified on Linux (2026-10-14): the script produces `PhoneHaul_0.1.0_amd64.AppImage` with the bundled receiver; `npm run check` passes (89 tests and end-to-end smoke).
 
 Baseline on 2026-10-02: `npm --prefix receiver test` passed 33/33 using local Node 24.21.0. The new file was untracked when work began.
 
