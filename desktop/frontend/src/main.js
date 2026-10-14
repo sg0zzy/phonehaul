@@ -7,11 +7,61 @@ const message = (text) => {
   $('message').textContent = text || '';
 };
 let pairingVersion = null;
+
+// Inline Material Symbols: replace <span data-icon="name"> with the bundled
+// SVG so icons inherit currentColor without any runtime font/CDN loading.
+const icons = import.meta.glob('./icons/*.svg', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+const icon = (name) => icons[`./icons/${name}.svg`] || '';
+for (const el of document.querySelectorAll('[data-icon]')) {
+  const svg = icon(el.dataset.icon);
+  if (svg) {
+    el.innerHTML = svg;
+    // Copy any extra classes (e.g. "small") onto the svg element itself.
+    if (el.className) el.firstElementChild.classList.add(...el.className.split(' '));
+    if (el.id) el.firstElementChild.id = el.id;
+  }
+}
+// Swap an already-inlined icon at runtime.
+function setIcon(el, name) {
+  const svg = icon(name);
+  if (!svg) return;
+  const cls = [...el.classList];
+  el.innerHTML = svg;
+  for (const c of cls) el.firstElementChild.classList.add(c);
+  if (el.id) el.firstElementChild.id = el.id;
+}
+
+// Server status chip: states derive only from receiver-reported data.
+function updateServerChip(server) {
+  const chip = $('server');
+  const icon = chip.querySelector('.ms-icon');
+  let label = 'Starting…';
+  let state = 'starting';
+  if (server) {
+    if (server.running) {
+      label = 'Ready';
+      state = 'ready';
+    } else {
+      label = 'Error';
+      state = 'error';
+      chip.title = server.error || 'Server stopped';
+    }
+  }
+  chip.setAttribute('data-status', state);
+  if (icon) setIcon(icon, 'circle');
+  chip.setAttribute('aria-live', 'polite');
+  chip.childNodes[chip.childNodes.length - 1].textContent = label;
+}
+
 function update(data) {
+  updateServerChip(data.server);
   if (data.server) {
-    $('server').textContent = data.server.running ? 'Running' : 'Stopped';
-    $('address').textContent = data.server.running
-      ? `Phone connection: ${data.server.host}:${data.server.port}`
+    $('address').querySelector('.address-text').textContent = data.server.running
+      ? `${data.server.host}:${data.server.port}`
       : data.server.error || 'Server stopped';
     if (!data.server.running) $('pairing').hidden = true;
   }
@@ -28,33 +78,58 @@ function update(data) {
     $('pairing-expiry').hidden = ui.connected;
     $('pairing-copy').textContent = ui.connected
       ? 'Phone paired. The QR code is hidden.'
-      : 'Open PhoneHaul on your Android phone and scan this code.';
+      : 'Scan this code with PhoneHaul on Android.';
     $('refresh-qr').hidden = Boolean(ui.connected);
   }
-  $('device').textContent = ui.connected ? 'Phone connected' : 'No phone connected';
+  const connected = Boolean(ui.connected);
+  $('device').querySelector('.device-text').textContent = connected
+    ? 'Phone connected'
+    : 'No phone connected';
+  $('device').classList.toggle('connected', connected);
+  // Send controls require a paired phone; disable while no phone is connected.
+  $('send').disabled = !connected;
+  $('drop-area').setAttribute('aria-disabled', String(!connected));
+  $('drop-area').classList.toggle('disabled', !connected);
   if (data.server?.running) $('pairing').hidden = false;
   const active = ui.transfer;
+  const progress = $('progress');
+  const status = $('transfer-status');
   if (active) {
-    $('transfer').textContent = active.finished
-      ? active.cancelled
+    if (active.finished) {
+      const failed = Boolean(active.cancelled) || Boolean(active.error);
+      status.dataset.state = failed ? 'error' : 'done';
+      setIcon($('transfer-icon'), failed ? 'error' : 'check_circle');
+      $('transfer').textContent = active.cancelled
         ? 'Transfer cancelled'
-        : 'Transfer complete'
-      : `Receiving ${active.completedItems || 0} of ${active.totalItems || 0} files${active.currentItem ? ` — ${active.currentItem}` : ''}`;
-    $('progress').value = active.totalBytes ? (active.receivedBytes || 0) / active.totalBytes : 0;
+        : active.error
+          ? `Transfer failed — ${active.error}`
+          : 'Transfer complete';
+    } else {
+      status.dataset.state = 'active';
+      setIcon($('transfer-icon'), 'sync');
+      $('transfer').textContent = `Receiving ${active.completedItems || 0} of ${
+        active.totalItems || 0
+      } files${active.currentItem ? ` — ${active.currentItem}` : ''}`;
+    }
+    progress.hidden = false;
+    progress.value = active.totalBytes ? (active.receivedBytes || 0) / active.totalBytes : 0;
   } else {
-    $('transfer').textContent = 'Idle';
-    $('progress').value = 0;
+    status.dataset.state = 'idle';
+    setIcon($('transfer-icon'), 'hourglass_empty');
+    $('transfer').textContent = 'No active transfers';
+    progress.hidden = true;
+    progress.value = 0;
   }
   const q = ui.sendQueue;
   if (q) {
     $('queue').replaceChildren(
       ...q.map((item) => {
         const li = document.createElement('li');
-        const progress =
+        const pct =
           item.size && item.state === 'sending'
             ? ` — ${Math.floor((item.progress / item.size) * 100)}%`
             : '';
-        li.textContent = `${item.name} — ${item.state}${progress}`;
+        li.textContent = `${item.name} — ${item.state}${pct}`;
         return li;
       }),
     );
@@ -105,11 +180,15 @@ $('send').addEventListener('click', async (event) => {
 });
 
 const dropArea = $('drop-area');
-dropArea.addEventListener('click', () => $('send').click());
+function openPicker() {
+  if (dropArea.classList.contains('disabled')) return;
+  $('send').click();
+}
+dropArea.addEventListener('click', openPicker);
 dropArea.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    $('send').click();
+    openPicker();
   }
 });
 await getCurrentWebview().onDragDropEvent(async ({ payload }) => {
@@ -118,7 +197,7 @@ await getCurrentWebview().onDragDropEvent(async ({ payload }) => {
     // uses CSS pixels. The mapping can be wrong with display scaling, so treat
     // the whole app window as the drop target instead of silently rejecting a
     // valid drop based on a fragile coordinate comparison.
-    dropArea.classList.add('dragging');
+    if (!dropArea.classList.contains('disabled')) dropArea.classList.add('dragging');
     return;
   }
   if (payload.type === 'leave') {

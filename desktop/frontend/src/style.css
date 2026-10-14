@@ -1,9 +1,90 @@
+/*
+ * Material Design 3 tokens and component styles for the PhoneHaul desktop UI.
+ *
+ * Light theme tokens are defined on :root; dark theme overrides live in
+ * @media (prefers-color-scheme: dark). All component rules reference tokens
+ * only, so both themes stay in sync automatically.
+ */
+
 :root {
-  font:
-    14px/1.4 system-ui,
-    sans-serif;
-  color: #202938;
-  background: #f4f6f8;
+  /* Color — light theme (neutral surfaces, blue accents). */
+  --md-primary: #1769aa;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #d6e6f7;
+  --md-on-primary-container: #123c5e;
+  --md-secondary-container: #e2e7ee;
+  --md-on-secondary-container: #2b3948;
+  --md-tertiary: #1769aa; /* reserved for future use; PhoneHaul accent is blue */
+  --md-surface: #f7f9fc;
+  --md-surface-container: #ffffff;
+  --md-surface-container-high: #eef2f7;
+  --md-surface-tone: #e9eef4; /* subtle tonal surface for destination, chips */
+  --md-on-surface: #1a2530;
+  --md-on-surface-variant: #46525f;
+  --md-outline: #8598ab;
+  --md-outline-variant: #cfd8e2;
+  --md-success: #1e7a34;
+  --md-success-container: #ddf3e0;
+  --md-warning: #8a5300;
+  --md-warning-container: #ffe9c2;
+  --md-error: #b3261e;
+  --md-error-container: #f9dedc;
+  --md-error-on-container: #8c1d18;
+  --md-scrim: rgba(0, 0, 0, 0.4);
+
+  /* Shape */
+  --md-radius-card: 16px;
+  --md-radius-button: 10px;
+  --md-radius-chip: 8px;
+  --md-radius-large: 24px;
+
+  /* Spacing (4px/8px grid) */
+  --md-space-1: 4px;
+  --md-space-2: 8px;
+  --md-space-3: 12px;
+  --md-space-4: 16px;
+  --md-space-5: 20px;
+  --md-space-6: 24px;
+
+  /* Typography */
+  --md-font: system-ui, sans-serif;
+  --md-title-large: 22px/1.25 var(--md-font);
+  --md-title-medium: 16px/1.3 var(--md-font);
+  --md-body-medium: 14px/1.45 var(--md-font);
+  --md-body-small: 13px/1.4 var(--md-font);
+  --md-label-medium: 500 12px/1.2 var(--md-font);
+
+  /* Focus */
+  --md-focus-color: var(--md-primary);
+  --md-focus-width: 3px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-primary: #9ecbf5;
+    --md-on-primary: #00344f;
+    --md-primary-container: #004c71;
+    --md-on-primary-container: #cbe6ff;
+    --md-secondary-container: #3b4754;
+    --md-on-secondary-container: #d7e2ee;
+    --md-tertiary: #9ecbf5;
+    --md-surface: #12171c;
+    --md-surface-container: #1b2229;
+    --md-surface-container-high: #232b33;
+    --md-surface-tone: #26303a;
+    --md-on-surface: #e2e8ee;
+    --md-on-surface-variant: #a6b3c1;
+    --md-outline: #77828e;
+    --md-outline-variant: #3d4650;
+    --md-success: #7edc92;
+    --md-success-container: #1d4b27;
+    --md-warning: #ffca7a;
+    --md-warning-container: #5c3d00;
+    --md-error: #ffb4ab;
+    --md-error-container: #5c1e18;
+    --md-error-on-container: #ffdad6;
+    --md-scrim: rgba(0, 0, 0, 0.6);
+  }
 }
 
 * {
@@ -14,84 +95,139 @@
 }
 body {
   margin: 0;
+  font: var(--md-body-medium);
+  color: var(--md-on-surface);
+  background: var(--md-surface);
 }
 main {
   max-width: 580px;
   margin: 0 auto;
-  padding: 18px 18px 22px;
+  padding: var(--md-space-4) var(--md-space-4) var(--md-space-5);
 }
 header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--md-space-3);
+  margin-bottom: var(--md-space-4);
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--md-space-2);
 }
 .mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--md-space-2);
 }
 h1 {
   margin: 0;
-  font-size: 25px;
-  line-height: 1.2;
+  font: var(--md-title-large);
 }
 h2 {
-  margin: 0 0 8px;
-  font-size: 16px;
+  margin: 0 0 var(--md-space-2);
+  font: var(--md-title-medium);
 }
 p {
-  margin: 0 0 9px;
+  margin: 0 0 var(--md-space-2);
+  font: var(--md-body-medium);
 }
+
+/* Cards */
 section {
   min-width: 0;
-  margin: 0 0 10px;
-  padding: 13px 16px;
-  background: white;
-  border: 1px solid #dce2e8;
-  border-radius: 10px;
+  margin: 0 0 var(--md-space-3);
+  padding: var(--md-space-4);
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-radius-card);
 }
 section > :last-child {
   margin-bottom: 0;
 }
+
+/* Buttons */
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--md-space-2);
   border: 0;
-  border-radius: 6px;
-  background: #1769aa;
-  color: white;
-  padding: 7px 11px;
+  border-radius: var(--md-radius-button);
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  padding: 8px 14px;
+  font: var(--md-label-medium);
+  letter-spacing: 0.1px;
   cursor: pointer;
   white-space: nowrap;
+}
+button:hover {
+  filter: brightness(1.06);
+}
+button:active {
+  filter: brightness(0.94);
+}
+button:focus-visible {
+  outline: var(--md-focus-width) solid var(--md-focus-color);
+  outline-offset: 2px;
 }
 button:disabled {
   opacity: 0.5;
   cursor: wait;
 }
-.secondary {
-  background: #eef2f5;
-  color: #243144;
-  border: 1px solid #cbd3dc;
+/* Tonal / outlined variants (secondary actions). */
+.secondary,
+.tonal {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
 }
+.tonal:hover {
+  filter: brightness(1.05);
+}
+.outlined {
+  background: transparent;
+  color: var(--md-primary);
+  border: 1px solid var(--md-outline);
+}
+
+/* Status chip in the header. Replaces the old prominent green pill. */
 .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: none;
-  background: #e9f3e9;
-  color: #27632c;
-  padding: 4px 9px;
-  border-radius: 20px;
+  padding: 5px 11px;
+  border-radius: var(--md-radius-large);
+  font: var(--md-label-medium);
+  background: var(--md-surface-tone);
+  color: var(--md-on-surface-variant);
+}
+.pill[data-status='starting'] {
+  background: var(--md-surface-tone);
+  color: var(--md-on-surface-variant);
+}
+.pill[data-status='ready'] {
+  background: var(--md-success-container);
+  color: var(--md-success);
+}
+.pill[data-status='error'] {
+  background: var(--md-error-container);
+  color: var(--md-error);
+}
+.pill .ms-icon {
+  font-size: 14px;
 }
 .muted {
-  color: #5e6b79;
+  color: var(--md-on-surface-variant);
 }
+
+/* Destination row inside Receiver card. */
 .destination-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--md-space-2);
 }
 .destination-copy {
   display: grid;
@@ -99,17 +235,50 @@ button:disabled {
   min-width: 0;
   flex: 1;
 }
+/* Tonal surface wrapping the destination path. */
+.destination-surface {
+  display: flex;
+  align-items: center;
+  gap: var(--md-space-2);
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: var(--md-radius-chip);
+  background: var(--md-surface-tone);
+  color: var(--md-on-surface);
+}
+.destination-surface code {
+  font-size: 13px;
+}
 code {
   overflow-wrap: anywhere;
 }
 .device-status {
-  margin: 9px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--md-space-2) 0 0;
+  font: var(--md-body-small);
+  color: var(--md-on-surface-variant);
 }
+
+/* Inline Material Symbols icons (bundled SVGs, currentColor). */
+.ms-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: currentColor;
+}
+.ms-icon.small {
+  width: 16px;
+  height: 16px;
+}
+
+/* Pairing (QR) card. */
 .pairing-content {
   display: grid;
   grid-template-columns: 174px minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: var(--md-space-4);
 }
 #qr {
   display: block;
@@ -117,6 +286,13 @@ code {
   height: 174px;
   max-width: 100%;
   image-rendering: pixelated;
+  /* Keep a white backing so the QR stays scannable in dark mode. */
+  padding: 8px;
+  border-radius: var(--md-radius-chip);
+  background: #ffffff;
+  object-fit: contain;
+  overflow: hidden;
+  color: transparent;
 }
 .pairing-instructions {
   min-width: 0;
@@ -124,73 +300,138 @@ code {
 .pairing-instructions p {
   margin-bottom: 10px;
 }
+
+/* Progress. */
 progress {
   display: block;
   width: 100%;
-  height: 12px;
+  height: 10px;
+  appearance: none;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--md-surface-tone);
 }
+progress::-webkit-progress-bar {
+  background: var(--md-surface-tone);
+}
+progress::-webkit-progress-value {
+  background: var(--md-primary);
+  border-radius: 5px;
+  transition: width 0.2s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  progress::-webkit-progress-value {
+    transition: none;
+  }
+}
+
 #queue {
   max-height: 105px;
-  margin: 10px 0 0;
+  margin: var(--md-space-2) 0 0;
   padding-left: 20px;
   overflow: auto;
   overflow-wrap: anywhere;
+  color: var(--md-on-surface-variant);
+  font: var(--md-body-small);
 }
 #queue:empty,
 #message:empty {
   display: none;
 }
 #message {
-  margin: 9px 0 0;
+  margin: var(--md-space-2) 0 0;
   overflow-wrap: anywhere;
 }
+
+/* Send card: compact horizontal drop zone + browse button. */
 .send-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
+  align-items: stretch;
+  gap: var(--md-space-2);
 }
 #drop-area {
   display: flex;
-  min-height: 66px;
-  padding: 9px;
-  border: 2px dashed #bac5d1;
-  border-radius: 9px;
-  background: #f8fafb;
+  min-height: 60px;
+  padding: var(--md-space-2) var(--md-space-3);
+  border: 2px dashed var(--md-outline-variant);
+  border-radius: var(--md-radius-card);
+  background: var(--md-surface-container-high);
   align-items: center;
   justify-content: center;
-  flex-direction: column;
-  gap: 2px;
-  color: #344256;
+  gap: var(--md-space-2);
+  color: var(--md-on-surface-variant);
   text-align: center;
   cursor: pointer;
   transition:
     background 0.12s,
     border-color 0.12s;
 }
-#drop-area span {
-  color: #657386;
-  font-size: 13px;
+#drop-area:hover,
+#drop-area:focus-visible {
+  border-color: var(--md-outline);
+}
+#drop-area strong {
+  font-weight: 500;
 }
 #drop-area.dragging {
-  border-color: #1769aa;
-  background: #eaf4fc;
+  border-color: var(--md-primary);
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+#drop-area:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 #drop-area:focus-visible {
-  outline: 3px solid #1769aa;
+  outline: var(--md-focus-width) solid var(--md-focus-color);
   outline-offset: 2px;
+}
+
+/* Transfer status card. */
+.transfer-status {
+  display: flex;
+  align-items: center;
+  gap: var(--md-space-2);
+}
+.transfer-status .ms-icon {
+  color: var(--md-on-surface-variant);
+}
+.transfer-status[data-state='done'] .ms-icon {
+  color: var(--md-success);
+}
+.transfer-status[data-state='error'] .ms-icon {
+  color: var(--md-error);
+}
+#transfer {
+  margin: 0;
+}
+#transfer-progress {
+  margin-bottom: 0;
+}
+
+/* Icon-only browse button, 48x48 clickable target. */
+.icon-button {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  align-self: stretch;
+}
+.icon-button .ms-icon {
+  width: 22px;
+  height: 22px;
 }
 
 @media (max-width: 470px) {
   main {
-    padding: 14px 12px;
+    padding: var(--md-space-3);
   }
   section {
-    padding: 12px;
+    padding: var(--md-space-3);
   }
   .pairing-content {
     grid-template-columns: 140px minmax(0, 1fr);
-    gap: 12px;
+    gap: var(--md-space-3);
   }
   #qr {
     width: 140px;

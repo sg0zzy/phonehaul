@@ -77,10 +77,11 @@ without running its exit hook still takes the sidecar with it. On a normal exit
 the backend kills the sidecar (`SIGTERM` on Unix / `kill` on Windows). See
 [docs/security.md](security.md) for the boundary details.
 
-**Window size.** The window starts at **580 × 763** logical pixels, the size that
-exactly fits the rendered content at the frontend's `max-width: 580px` (measured in
+**Window size.** The window starts at **580 × 789** logical pixels, the size that
+exactly fits the rendered content at the frontend's `max-width: 580px` (777px
+content plus a 12px rounding safety margin; measured in
 headless Chromium with the queue and message areas empty). The minimum is
-**284 × 520**: 284 is the narrowest width the content reflows to without horizontal
+**291 × 520**: 291 is the narrowest width the content reflows to without horizontal
 overflow, and below the content height the page scrolls. The `window-state` plugin
 remembers only the window **position** (`StateFlags::POSITION`, file
 `window-state-compact.json` in the app config dir); size and maximized state are not
