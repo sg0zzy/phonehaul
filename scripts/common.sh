@@ -7,6 +7,100 @@ phonehaul_die() {
   exit 1
 }
 
+# --- canonical version (VERSIONING.md §3) -------------------------------------
+# VERSION at the repository root is the single source of truth for the core
+# version and development status. N (dev number) and the official flag come
+# from the environment, never from the source tree.
+phonehaul_canonical_version() {
+  [[ -f "$PHONEHAUL_ROOT/VERSION" ]] || phonehaul_die "VERSION file not found at $PHONEHAUL_ROOT/VERSION (VERSIONING.md §3)."
+  local canonical
+  canonical="$(tr -d '[:space:]' < "$PHONEHAUL_ROOT/VERSION")"
+  [[ "$canonical" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-dev)?$ ]] ||
+    phonehaul_die "invalid VERSION content '$canonical': expected X.Y.Z or X.Y.Z-dev."
+  printf '%s\n' "$canonical"
+}
+
+phonehaul_core_version() {
+  local canonical
+  canonical="$(phonehaul_canonical_version)"
+  printf '%s\n' "${canonical%-dev}"
+}
+
+# Display version for the current build: X.Y.Z when PHONEHAUL_OFFICIAL=1,
+# otherwise X.Y.Z-dev.N (N from PHONEHAUL_DEV_N, default 1).
+phonehaul_display_version() {
+  local canonical core
+  canonical="$(phonehaul_canonical_version)"
+  core="${canonical%-dev}"
+  if [[ "${PHONEHAUL_OFFICIAL:-}" == 1 ]]; then
+    [[ "$canonical" != *-dev ]] || phonehaul_die "official builds require a stable VERSION (found $canonical)."
+    printf '%s\n' "$core"
+  else
+    local n="${PHONEHAUL_DEV_N:-1}"
+    [[ "$n" =~ ^[1-9][0-9]*$ ]] || phonehaul_die "invalid PHONEHAUL_DEV_N '$n': expected a positive integer without leading zeroes."
+    printf '%s\n' "$core-dev.$n"
+  fi
+}
+
+# --- git identity (VERSIONING.md §4.5) ----------------------------------------
+phonehaul_git_commit() {
+  git -C "$PHONEHAUL_ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown\n'
+}
+
+phonehaul_git_is_dirty() {
+  [[ -n "$(git -C "$PHONEHAUL_ROOT" status --porcelain 2>/dev/null)" ]]
+}
+
+# Content digest of all tracked files plus the canonical VERSION file, so a
+# dirty build can be tied to its actual inputs (SHA + dirty alone is not
+# enough to reconstruct source).
+phonehaul_source_digest() {
+  {
+    git -C "$PHONEHAUL_ROOT" ls-files -z | LC_ALL=C sort -z |
+      xargs -0 -r git -C "$PHONEHAUL_ROOT" cat-file --batch 2>/dev/null | sha256sum | cut -d' ' -f1
+    [[ -f "$PHONEHAUL_ROOT/VERSION" ]] && sha256sum "$PHONEHAUL_ROOT/VERSION" | cut -d' ' -f1
+  } | sha256sum | cut -d' ' -f1
+}
+
+# --- build identity (VERSIONING.md §4.2/§4.4) ---------------------------------
+# Unique per invocation: UTC timestamp with sub-second precision plus PID.
+phonehaul_build_id() {
+  printf '%s-%s\n' "$(date -u +%Y%m%dT%H%M%S%N)" "$$"
+}
+
+# Atomic per-workstation dev.N counter under gitignored .build-state/.
+# Resets when the selected core changes. Callers must export PHONEHAUL_DEV_N
+# before child builds so every artifact of one invocation shares one version.
+phonehaul_next_dev_n() {
+  local state_dir="$PHONEHAUL_ROOT/.build-state" core state n lock waited=0
+  core="$(phonehaul_core_version)"
+  mkdir -p "$state_dir"
+  state="$state_dir/dev-counter"
+  lock="$state.lock"
+  while ! mkdir -- "$lock" 2>/dev/null; do
+    # Steal locks older than ~30 s (crashed builder).
+    if [[ -n "$(find "$lock" -maxdepth 0 -mmin +0.5 2>/dev/null)" ]]; then
+      rm -rf -- "$lock"
+    else
+      sleep 0.1
+      waited=$((waited + 1))
+      ((waited < 300)) || phonehaul_die "timed out waiting for $lock"
+    fi
+  done
+  n=1
+  if [[ -f "$state" ]]; then
+    local recorded_core recorded_n
+    recorded_core="$(sed -n 's/^core=//p' "$state")"
+    recorded_n="$(sed -n 's/^n=//p' "$state")"
+    if [[ "$recorded_core" == "$core" && "$recorded_n" =~ ^[1-9][0-9]*$ ]]; then
+      n=$((recorded_n + 1))
+    fi
+  fi
+  printf 'core=%s\nn=%s\n' "$core" "$n" > "$state.tmp" && mv -f -- "$state.tmp" "$state"
+  rmdir -- "$lock"
+  printf '%s\n' "$n"
+}
+
 phonehaul_use_node() {
   if ! command -v nvm >/dev/null 2>&1; then
     local nvm_init="${NVM_DIR:-$HOME/.nvm}/nvm.sh"

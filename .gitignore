@@ -1,5 +1,6 @@
 node_modules/
 /dist/
+.build-state/
 receiver/.build/
 *.phonehaul-partial
 .DS_Store

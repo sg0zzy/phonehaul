@@ -1,6 +1,9 @@
 [package]
 name = "phonehaul-desktop"
-version = "0.1.0"
+# Placeholder crate version, never published. The product version is derived
+# from the canonical VERSION file and injected by scripts/tauri-build-versioned.js
+# via `--config` (VERSIONING.md §3); do not bump this independently.
+version = "0.0.0"
 description = "PhoneHaul desktop"
 edition = "2021"
 

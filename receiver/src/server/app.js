@@ -41,6 +41,7 @@ export async function startReceiver({
   openBrowser = false,
   exitOnUiClose = false,
   phoneOfflineWindowMs = 15_000,
+  phoneStaleMs = 60_000,
 } = {}) {
   let settings = await loadSettings(settingsFile);
   await mkdir(settings.destination, { recursive: true });
@@ -59,10 +60,19 @@ export async function startReceiver({
   let lastPhoneSeen = 0;
   let wasPhoneOnline = false;
   let phoneSupportsSend = false;
+  // Long-quiet cutoff: Android throttles a backgrounded app's poll loop, so a
+  // healthy phone can be silent well past phoneOfflineWindowMs while both
+  // devices stay up. But a phone quiet for minutes is really gone (app closed,
+  // swiped away, or off-network); the pairing session is reset so both sides
+  // converge to the just-started state instead of stuck "paired".
   const phoneOnline = () =>
     session.connected && (!phoneSupportsSend || Date.now() - lastPhoneSeen < phoneOfflineWindowMs);
   const uiState = () => ({
     transfer: transfer.summary(false),
+    // paired: pairing session exists (QR hidden). connected: phone heard recently.
+    // A backgrounded Android app is throttled and can be quiet well past
+    // phoneOfflineWindowMs while both devices stay up, so those are independent.
+    paired: session.connected,
     connected: phoneOnline(),
     sendConnected: phoneOnline() && phoneSupportsSend,
     pairingVersion,
@@ -96,8 +106,20 @@ export async function startReceiver({
       refreshPairing();
       return;
     }
-    if (session.connected && phoneSupportsSend && !phoneOnline()) {
-      log('phone offline', 'pairing session ended; the QR code is shown again');
+    // A quiet phone below the stale cutoff keeps its pairing session: Android
+    // throttles the app's poll loop in the background, so short silence is not
+    // proof of disconnection while both devices are up on the same network.
+    // phoneOnline() still reports the quiet period, and the phone reconnects
+    // transparently at its next authenticated request. Past phoneStaleMs the
+    // pair ends (app closed or network gone) and both sides return to the
+    // just-started state: fresh QR here, scan screen on the phone.
+    if (
+      session.connected &&
+      phoneSupportsSend &&
+      lastPhoneSeen > 0 &&
+      Date.now() - lastPhoneSeen >= phoneStaleMs
+    ) {
+      log('phone connection lost', 'pairing session ended; the QR code is shown again');
       sendQueue.failActive('Phone disconnected');
       refreshPairing();
     }

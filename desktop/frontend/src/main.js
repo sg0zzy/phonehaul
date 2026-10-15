@@ -73,13 +73,18 @@ function update(data) {
     pairingVersion = ui.pairingVersion;
     if (changed && !ui.qr && !ui.connected) refresh().catch((e) => message(String(e)));
   }
-  if (typeof ui.connected === 'boolean') {
-    $('qr').hidden = ui.connected;
-    $('pairing-expiry').hidden = ui.connected;
-    $('pairing-copy').textContent = ui.connected
+  if (typeof ui.paired === 'boolean') {
+    // paired = pairing session exists; a quiet (backgrounded) phone stays paired.
+    // While paired but not connected (connection interrupted, phone quiet) the
+    // refresh button stays available so the user can force a fresh QR instead of
+    // waiting out the stale-session reset.
+    const paired = ui.paired;
+    $('qr').hidden = paired;
+    $('pairing-expiry').hidden = paired;
+    $('pairing-copy').textContent = paired
       ? 'Phone paired. The QR code is hidden.'
       : 'Scan this code with PhoneHaul on Android.';
-    $('refresh-qr').hidden = Boolean(ui.connected);
+    $('refresh-qr').hidden = paired && ui.connected;
   }
   const connected = Boolean(ui.connected);
   $('device').querySelector('.device-text').textContent = connected

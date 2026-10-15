@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build",
+    "dev": "node scripts/tauri-build-versioned.js dev",
+    "build": "node scripts/tauri-build-versioned.js build",
     "frontend:dev": "vite frontend --host 127.0.0.1 --port 1420",
     "frontend:build": "vite build frontend --outDir ../frontend-dist --emptyOutDir",
     "build:sidecar": "npm --prefix ../receiver run package:sea && node scripts/stage-sidecar.js",

@@ -346,7 +346,7 @@ test('expired QR is replaced in the local UI and old token is rejected', async (
   }
 });
 
-test('a paired phone that goes quiet ends the session and shows the QR again', async () => {
+test('a paired phone that goes quiet stays paired and reconnects on its next request', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-offline-'));
   const settingsFile = path.join(root, 'settings.json');
   await writeFile(
@@ -357,7 +357,7 @@ test('a paired phone that goes quiet ends the session and shows the QR again', a
     host: '127.0.0.1',
     transferPort: 0,
     settingsFile,
-    phoneOfflineWindowMs: 0,
+    phoneOfflineWindowMs: 200, // ms; a small nonzero window keeps the quiet check meaningful
   });
   try {
     const original = receiver.session.token;
@@ -393,14 +393,115 @@ test('a paired phone that goes quiet ends the session and shows the QR again', a
     });
     assert.equal(queued.status, 201);
     assert.equal((await request(receiver, 'GET', '/api/send/next')).status, 200);
-    const dropped = await uiRequest(receiver.uiUrl, '/api/ui');
-    assert.equal(dropped.connected, false);
-    assert.equal(dropped.sendConnected, false);
-    assert.equal(dropped.pairingVersion, 1);
-    assert.match(dropped.qr, /^data:image\/png;base64,/);
-    const file = dropped.sendQueue.find((entry) => entry.type === 'file');
-    assert.equal(file.state, 'failed');
-    assert.equal(file.error, 'Phone disconnected');
+
+    // Quiet past the offline window (30ms): the pairing session survives (a
+    // backgrounded app is throttled, not gone), the QR stays hidden, and the
+    // queued item is kept.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const quiet = await uiRequest(receiver.uiUrl, '/api/ui');
+    assert.equal(quiet.paired, true);
+    assert.equal(quiet.connected, false);
+    assert.equal(quiet.sendConnected, false);
+    assert.equal(quiet.pairingVersion, 0);
+    assert.match(quiet.qr, /^data:image\/png;base64,/);
+    assert.equal(receiver.session.token, original);
+    const kept = quiet.sendQueue.find((entry) => entry.type === 'file');
+    assert.equal(kept.state, 'sending');
+
+    // The same token still works; polling again restores the connected state.
+    assert.equal((await request(receiver, 'GET', '/api/send/next')).status, 200);
+    const resumed = await uiRequest(receiver.uiUrl, '/api/ui');
+    assert.equal(resumed.connected, true);
+    assert.equal(resumed.sendConnected, true);
+    assert.equal(resumed.paired, true);
+    assert.equal(receiver.session.token, original);
+    // An unconnected session cannot pair while one is open.
+    assert.equal(
+      (await localRequest(receiver.uiUrl, '/api/qr/refresh', { method: 'POST' })).status,
+      400,
+    );
+  } finally {
+    await receiver.close();
+  }
+});
+
+test('a phone quiet past the stale cutoff resets the pairing on both ends', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-stale-'));
+  const settingsFile = path.join(root, 'settings.json');
+  await writeFile(
+    settingsFile,
+    JSON.stringify({ destination: path.join(root, 'dest'), conflict: 'rename' }),
+  );
+  const receiver = await startReceiver({
+    host: '127.0.0.1',
+    transferPort: 0,
+    settingsFile,
+    phoneOfflineWindowMs: 200, // ms; liveness window
+    phoneStaleMs: 400, // ms; long-quiet reset
+  });
+  try {
+    const original = receiver.session.token;
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          'X-PhoneHaul-Capabilities': 'send-to-phone',
+        })
+      ).status,
+      200,
+    );
+    assert.equal((await uiRequest(receiver.uiUrl, '/api/ui')).connected, true);
+
+    // Quiet well past the stale cutoff: the pairing session is reset, a fresh
+    // QR is generated, and the UI is back to the just-started state.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const reset = await uiRequest(receiver.uiUrl, '/api/ui');
+    assert.equal(reset.paired, false);
+    assert.equal(reset.connected, false);
+    assert.notEqual(receiver.session.token, original);
+    assert.match(reset.qr, /^data:image\/png;base64,/);
+
+    // The phone's old token is rejected, so it ends on the scan screen.
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          Authorization: `Bearer ${original}`,
+          'X-PhoneHaul-Capabilities': 'send-to-phone',
+        })
+      ).status,
+      401,
+    );
+  } finally {
+    await receiver.close();
+  }
+});
+
+test('a manually replaced QR invalidates the old pairing token', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'phonehaul-qrsweep-'));
+  const settingsFile = path.join(root, 'settings.json');
+  await writeFile(
+    settingsFile,
+    JSON.stringify({ destination: path.join(root, 'dest'), conflict: 'rename' }),
+  );
+  const receiver = await startReceiver({
+    host: '127.0.0.1',
+    transferPort: 0,
+    settingsFile,
+    phoneOfflineWindowMs: 0,
+  });
+  try {
+    const original = receiver.session.token;
+    assert.equal(
+      (
+        await request(receiver, 'POST', '/api/session/connect', undefined, {
+          'X-PhoneHaul-Capabilities': 'send-to-phone',
+        })
+      ).status,
+      200,
+    );
+    // Force the session offline so the QR refresh endpoint is allowed.
+    receiver.session.connected = false;
+    const replaced = await localRequest(receiver.uiUrl, '/api/qr/refresh', { method: 'POST' });
+    assert.equal(replaced.status, 200);
     assert.notEqual(receiver.session.token, original);
     assert.equal(
       (

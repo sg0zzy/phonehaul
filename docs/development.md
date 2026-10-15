@@ -195,6 +195,49 @@ bash scripts/build-desktop-macos.sh
 > notarization (codesigning certificate + notarization key) is **future work**
 > — not part of the current release.
 
+## Versioning and builds
+
+The repository-root [`VERSION`](https://github.com/sg0zzy/phonehaul/blob/main/VERSION)
+file is the single source of truth for the version: `X.Y.Z` (release state) or
+`X.Y.Z-dev` (development state). The full contract is
+[VERSIONING.md](https://github.com/sg0zzy/phonehaul/blob/main/VERSIONING.md);
+platform deviations are listed in [Versioning exceptions](versioning-exceptions.md).
+The development number `N` and the official flag are **never** stored in the
+tree — builds supply them via `PHONEHAUL_DEV_N` / `PHONEHAUL_OFFICIAL=1`.
+
+```sh
+./scripts/version.sh show              # canonical + derived display/codes
+./scripts/version.sh bump patch        # 0.1.1-dev -> 0.1.2-dev (counter resets)
+./scripts/version.sh set 0.2.0         # dev -> stable transition
+
+./scripts/build.sh dev receiver        # dev build, unique non-overwriting archive
+./scripts/build.sh dev desktop-linux   # Tauri AppImage (version injected)
+./scripts/build.sh dev android         # debug APK (versionName/versionCode derived)
+
+./scripts/release.sh prepare 0.2.0     # clean tree + checks -> commit + tag v0.2.0
+./scripts/release.sh publish 0.2.0     # push branch + tag (starts official CI)
+```
+
+Dev builds archive every artifact under
+`dist/dev/<version>/<build-id>/<product>/` together with a
+`build-manifest.json` (version, build id, commit, dirty flag, source digest,
+lockfile digests, per-file SHA-256). Existing paths are never overwritten; a
+dirty worktree additionally stores the patch and untracked-file digests under
+`.build-state/diffs/`. The per-workstation `dev.N` counter lives in
+gitignored `.build-state/dev-counter` and resets when the core changes.
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `PHONEHAUL_OFFICIAL` | unset | `1` marks an official build; requires a stable `VERSION` (no `-dev`). |
+| `PHONEHAUL_DEV_N` | `1` | Development number for dev builds (positive integer). |
+| `PHONEHAUL_VERSION_FILE` | `VERSION` | Override the canonical file (validation probes/tests). |
+| `PHONEHAUL_SKIP_CHECKS` | unset | `1` skips `npm run check` inside `release.sh prepare` (emergency only). |
+| `MSIX_VERSION` | derived | Override the MSIX Identity Version (normally derived). |
+
+CI validates the canonical version on every build
+(`node scripts/shared/version.js json`) and refuses tag builds whose `v*` tag
+disagrees with `VERSION`.
+
 ## Environment variables
 
 | Variable | Default | Effect |
@@ -366,10 +409,11 @@ MSIX with a Microsoft certificate (no cert needed for an MSIX submission).
 ### Google Play (Android)
 
 The workflow **`Android signed release`** (`.github/workflows/android-signed-release.yml`)
-runs on `v*` tags (and `workflow_dispatch`), in the protected **`release`**
-environment, and uploads a signed **APK** and **AAB** as the artifact
-`phonehaul-android-release`. Signing is read from four `release`-environment
-secrets (never committed):
+runs on `v*` tags (and `workflow_dispatch` — but only on the commit already
+tagged `v<VERSION>`; CI refuses untagged official builds), in the protected
+**`release`** environment, and uploads a signed **APK** and **AAB** as the
+artifact `phonehaul-android-release`. Signing is read from four
+`release`-environment secrets (never committed):
 
 | Secret | What it is |
 |--------|-----------|
@@ -377,9 +421,17 @@ secrets (never committed):
 | `ANDROID_STORE_PASSWORD` | keystore password |
 | `ANDROID_KEY_ALIAS` | key alias |
 | `ANDROID_KEY_PASSWORD` | key password |
+| `PLAY_SERVICE_ACCOUNT_JSON` | *optional* — service-account key JSON; when set, tag builds auto-upload the AAB to the Play **internal** track |
 
-`versionCode` is taken from `GITHUB_RUN_NUMBER` (auto-increments per tag);
-`versionName` is `0.1.0` in `android/app/build.gradle.kts`. To upload:
+Without `PLAY_SERVICE_ACCOUNT_JSON` the workflow only produces the artifact
+(manual upload below). With it, the tag build uploads the AAB to the internal
+track with `changesNotSentForReview=true` — nothing reaches production without
+a human promoting it in Play Console (VERSIONING.md §6.6).
+
+Both `versionName` and `versionCode` are derived from the canonical `VERSION`
+file at the repo root (see [Versioning and builds](#versioning-and-builds));
+official tag builds get `versionName=X.Y.Z` and the stable `versionCode` slot.
+To upload:
 
 1. In Play Console, create the app and **enroll in Play app signing** (Google
    keeps the production key; you supply an *upload* key).
@@ -392,13 +444,27 @@ secrets (never committed):
    prompted. That value is **both** `ANDROID_STORE_PASSWORD` and
    `ANDROID_KEY_PASSWORD`. **Back up the `.jks` and its passwords offline** —
    losing them means you can never update the app.
-3. Add the four secrets above to the `release` environment
+3. Add the four signing secrets above to the `release` environment
    (Settings → Environments → `release` → Secrets); `ANDROID_KEYSTORE_BASE64`
    is the output of `base64 -w0 phonehaul-upload.jks`.
-4. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
-5. Download the `phonehaul-android-release` artifact; upload the **`.aab`** in
-   Play Console (an AAB is required for production; the APK is for
-   internal/managed tracks).
+4. **Optional — automatic Play upload (internal track):**
+   1. The Play Developer API cannot create an app: do the **first** release
+      manually in Play Console (steps 5–6), then CI can push updates.
+   2. In Google Cloud, enable the **Google Play Android Developer API** in a
+      project, create a **service account**, and download its **JSON key**.
+   3. In Play Console → Users and permissions → **Invite new user**, add the
+      service-account email, and grant it at least internal-track release
+      permission (accept the invitation from the key's `client_email`).
+   4. Set the whole JSON as the `release`-environment secret
+      `PLAY_SERVICE_ACCOUNT_JSON`. Tag builds now upload the AAB to the
+      **internal** track automatically; without it they only produce the
+      artifact.
+5. Release and publish: `./scripts/release.sh prepare 0.2.0 && ./scripts/release.sh publish 0.2.0`
+   (creates and pushes the `v0.2.0` tag; see [Versioning and builds](#versioning-and-builds)).
+6. Without `PLAY_SERVICE_ACCOUNT_JSON`: download the `phonehaul-android-release`
+   artifact and upload the **`.aab`** in Play Console (an AAB is required for
+   production; the APK is for internal/managed tracks). With it: the build
+   uploads to the internal track; promote from there manually.
 
 ### Privacy policy and Data safety
 
@@ -438,7 +504,7 @@ Actions → Variables):
 | `MSIX_IDENTITY_NAME` | e.g. `youraccount.PhoneHaul` | 3–50 chars, `[A-Za-z0-9.-]`; exact Partner Center package name |
 | `MSIX_PUBLISHER` | e.g. `CN=Your Name, O=Your Name, L=City, S=State, C=US` | full Publisher DN, **exact** match to Partner Center, must start with `CN=` |
 | `MSIX_PUBLISHER_DISPLAY_NAME` | e.g. `Your Name` | optional, shown in the Store |
-| `MSIX_VERSION` | e.g. `1.0.0.0` | optional, default `1.0.0.0`; four numbers, first nonzero, last `0` |
+| `MSIX_VERSION` | e.g. `1.0.0.0` | optional; default derived from `VERSION` (see [Versioning exceptions](versioning-exceptions.md)) |
 
 To register and submit:
 

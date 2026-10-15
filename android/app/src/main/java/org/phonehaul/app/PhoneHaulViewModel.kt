@@ -141,6 +141,24 @@ class PhoneHaulViewModel(
                                         }
                                     } catch (e: CancellationException) {
                                         throw e
+                                    } catch (e: ReceiverHttpException) {
+                                        if (!uiState.busy && client === candidate) {
+                                            client = null
+                                            inboxJob = null
+                                            uiState =
+                                                uiState.copy(
+                                                    pairing = null,
+                                                    selected = emptyList(),
+                                                    error =
+                                                        if (e.statusCode == 401) {
+                                                            "Pairing was ended on the computer. Tap Scan PC QR to reconnect."
+                                                        } else {
+                                                            "Connection to the computer was lost. Tap Scan PC QR to reconnect."
+                                                        },
+                                                    screen = Screen.START,
+                                                )
+                                            return@launch
+                                        }
                                     } catch (_: Exception) {
                                         if (!uiState.busy && client === candidate && ++consecutivePollFailures >= 3) {
                                             client = null

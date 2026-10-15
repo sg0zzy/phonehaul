@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { msixVersion } from '../../scripts/shared/version.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const assets = path.join(root, 'desktop/msix/Assets');
@@ -88,7 +89,11 @@ async function main() {
     throw new Error(
       'Set MSIX_IDENTITY_NAME and MSIX_PUBLISHER to the exact values from Partner Center.',
     );
-  const version = process.env.MSIX_VERSION || '1.0.0.0';
+  // Derived from the canonical VERSION core (VERSIONING.md §3/§8): MSIX
+  // Identity Version is numeric-only, so the pre-1.0 core maps to major 1.
+  // MSIX_VERSION overrides for Partner Center submissions that need an exact
+  // reserved number.
+  const version = process.env.MSIX_VERSION || msixVersion();
   const publisherDisplayName = process.env.MSIX_PUBLISHER_DISPLAY_NAME || 'PhoneHaul';
   const content = manifest({ name, publisher, publisherDisplayName, version, arch });
   const outputDir = path.join(root, 'dist/msix');

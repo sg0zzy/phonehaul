@@ -104,4 +104,6 @@ Published site: <https://sg0zzy.github.io/phonehaul/> (built from `docs/`).
 - [Security model](docs/security.md)
 - [Architecture](docs/architecture.md)
 - [Privacy policy](docs/privacy.html)
+- [Versioning contract](VERSIONING.md) — how versions and builds are derived;
+  local dev builds: `./scripts/build.sh dev [receiver|android|appimage|desktop-linux|all]`
 - [Rules for contributors / AI agents](AGENTS.md)

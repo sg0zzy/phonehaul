@@ -9,12 +9,19 @@ application data.
 All transfer requests use `Authorization: Bearer <token>`. The unused pairing
 token expires after five minutes; the receiver then generates a new QR and
 updates the local browser UI. `POST /api/session/connect` associates it with
-the running receiver session. Restart invalidates it. A connected session also
-ends when a phone that declared `send-to-phone` stays quiet for 15 s, which
-generates a new QR: pairing is either connected or not connected, and the QR is
-shown whenever it is not. Receivers supporting per-file streaming advertise
-`incremental-transfer` in the connection capabilities; the current Android app
-requires that capability.
+the running receiver session. Restart invalidates it. A pairing session is
+either connected or not, and the QR is shown whenever it is not. A connected
+session tolerates short quiet gaps: a backgrounded Android app is throttled
+and can be silent well past 15 s while both devices stay up, so the receiver
+reports the phone as not heard recently but keeps the pairing and the hidden
+QR, and the phone reconnects transparently on its next authenticated request.
+When a send-capable phone has been quiet for a full minute the pair is treated
+as interrupted — the app was closed or the devices drifted apart — and the
+receiver regenerates the QR, returning both sides to the just-started state.
+The same happens if the phone re-polls after the reset (its old token is
+rejected, so it shows the scan screen). Receivers supporting per-file
+streaming advertise `incremental-transfer` in the connection capabilities;
+the current Android app requires that capability.
 
 ## Phone → Computer transfers
 

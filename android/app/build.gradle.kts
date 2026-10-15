@@ -1,5 +1,57 @@
 import java.util.Properties
 
+// --- canonical version adapter (VERSIONING.md §3, §8) -------------------------
+// The repository-root VERSION file is the single source of truth. versionName
+// is the display version; versionCode uses the bounded scheme
+//   core = major*100000 + minor*1000 + patch; versionCode = core*1000 + slot
+// with dev slots 1..998 (PHONEHAUL_DEV_N) and stable slot 999
+// (PHONEHAUL_OFFICIAL=1). Fails closed on overflow or an invalid VERSION.
+// Keep the scheme in sync with scripts/shared/version.js.
+val canonicalVersion: String =
+    rootProject.file("../VERSION").readText().trim().also { text ->
+        require(Regex("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-dev)?$").matches(text)) {
+            "PhoneHaul version: invalid VERSION content '$text': expected X.Y.Z or X.Y.Z-dev (VERSIONING.md §3)."
+        }
+    }
+val versionCore = canonicalVersion.removeSuffix("-dev")
+val isOfficialBuild = System.getenv("PHONEHAUL_OFFICIAL") == "1"
+val devNumberRaw = System.getenv("PHONEHAUL_DEV_N")?.trim() ?: "1"
+require(Regex("^[1-9]\\d*$").matches(devNumberRaw)) {
+    "PhoneHaul version: invalid PHONEHAUL_DEV_N '$devNumberRaw': expected a positive integer without leading zeroes (VERSIONING.md §2.2)."
+}
+val devNumber = devNumberRaw.toInt()
+
+if (isOfficialBuild) {
+    require(!canonicalVersion.endsWith("-dev")) {
+        "PhoneHaul version: official builds require a stable VERSION (found $canonicalVersion)."
+    }
+}
+
+val versionParts = versionCore.split('.').map { it.toLong() }
+require(versionParts.size == 3 && versionParts.all { it >= 0 }) {
+    "PhoneHaul version: invalid core $versionCore."
+}
+require(versionParts[0] <= 20 && versionParts[1] <= 99 && versionParts[2] <= 999) {
+    "PhoneHaul version: core $versionCore exceeds the Android versionCode allocation " +
+        "(major<=20, minor<=99, patch<=999); change the documented allocation before distributing (VERSIONING.md §8)."
+}
+val versionSlot: Int =
+    if (isOfficialBuild) {
+        999
+    } else {
+        require(devNumber <= 998) {
+            "PhoneHaul version: dev.$devNumber exceeds the Android dev slot range 1..998; advance the core or " +
+                "use a centrally managed allocator before distributing (VERSIONING.md §8)."
+        }
+        devNumber
+    }
+val derivedVersionCode: Int = versionParts[0].toInt() * 100_000_000 + versionParts[1].toInt() * 1_000_000 + versionParts[2].toInt() * 1000 + versionSlot
+require(derivedVersionCode <= 2_100_000_000) {
+    "PhoneHaul version: versionCode $derivedVersionCode exceeds the Google Play cap 2100000000."
+}
+val derivedVersionName: String =
+    if (isOfficialBuild) versionCore else "$versionCore-dev.$devNumber"
+
 val keystoreProperties = Properties()
 val keystorePropertiesFile =
     file("${System.getProperty("user.home")}/.secrets/android/phonehaul/keystore.properties")
@@ -38,8 +90,8 @@ android {
         applicationId = "org.phonehaul.app"
         minSdk = 30
         targetSdk = 36
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.takeIf { it > 0 } ?: 1
-        versionName = "0.1.0"
+        versionCode = derivedVersionCode
+        versionName = derivedVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

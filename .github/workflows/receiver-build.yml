@@ -19,6 +19,17 @@ jobs:
           node-version-file: .nvmrc
       - name: Verify Node.js version
         run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
+      - name: Validate canonical version (VERSIONING.md §9.6)
+        run: node scripts/shared/version.js json
+      # Debug APKs are a separate channel: debug-signed (ephemeral runner key,
+      # so cross-run in-place upgrades are impossible anyway) and never
+      # uploaded to Play. They build as dev.1 of the current core; the Play
+      # channel is the signed release workflow (VERSIONING.md §8).
+      - name: Record build version
+        run: |
+          echo "PHONEHAUL_OFFICIAL=0" >> "$GITHUB_ENV"
+          echo "PHONEHAUL_DEV_N=1" >> "$GITHUB_ENV"
+          echo "version: $(node scripts/shared/version.js display)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
@@ -55,6 +66,8 @@ jobs:
           node-version-file: .nvmrc
       - name: Verify Node.js version
         run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
+      - name: Validate canonical version (VERSIONING.md §9.6)
+        run: node scripts/shared/version.js json
       - name: Install receiver dependencies
         run: npm ci --prefix receiver
       - name: Run receiver tests
@@ -140,6 +153,23 @@ jobs:
           cache-dependency-path: |
             desktop/package-lock.json
             receiver/package-lock.json
+      - name: Resolve build version (VERSIONING.md §6.2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/v}"
+            core="$(node scripts/shared/version.js core)"
+            if [[ "$tag" != "$core" ]]; then
+              echo "CI refuses: tag v${tag} disagrees with VERSION core ${core} (§6.2)." >&2
+              exit 1
+            fi
+            echo "PHONEHAUL_OFFICIAL=1" >> "$GITHUB_ENV"
+          else
+            echo "PHONEHAUL_OFFICIAL=0" >> "$GITHUB_ENV"
+          fi
+          echo "PHONEHAUL_DEV_N=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "version: $(node scripts/shared/version.js display)" >> "$GITHUB_STEP_SUMMARY"
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
         with:
           components: clippy, rustfmt
