@@ -13,12 +13,13 @@
     "smoke:sea": "npm --prefix receiver run smoke:sea",
     "desktop:dev": "npm --prefix desktop run dev",
     "desktop:build": "npm --prefix desktop run build",
-    "format": "prettier --write \"{receiver,desktop,integration-tests}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
-    "check:format": "prettier --check \"{receiver,desktop,integration-tests}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
-    "lint": "eslint receiver desktop integration-tests",
+    "format": "prettier --write \"{receiver,desktop,integration-tests,scripts}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
+    "check:format": "prettier --check \"{receiver,desktop,integration-tests,scripts}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
+    "lint": "eslint receiver desktop integration-tests scripts",
     "smoke": "node integration-tests/smoke.js",
     "check:docs": "node integration-tests/check-docs-links.js",
-    "check": "npm run check:format && npm run lint && npm run check:docs && npm test && npm run smoke"
+    "check": "npm run check:format && npm run lint && npm run check:docs && npm run test:standards && npm test && npm run smoke",
+    "test:standards": "node --test integration-tests/standards.test.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

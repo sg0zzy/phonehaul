@@ -27,7 +27,7 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Investigate hard link failure on exFAT and fix if confirmed. Microsoft documents that exFAT and FAT32 do not support hard links; confirmed EPERM on a mounted exFAT image. Added `TransferReceiver.upload()` fallback committing via `rename` when `link()` is unsupported, with unit tests (link-failure and race/no-clobber). Real exFAT mount E2E verified PASS.
   - [x] Test the protocol vector and correct schema drift.
   - [x] Fix Rust UTF-8 streaming, with a split-byte regression test.
-  - [x] Fix the AppImage ARM path and Android release version code. Superseded approach (2026-10-15): `versionCode`/`versionName` are now derived from the canonical root `VERSION` file via the documented adapter in [VERSIONING.md](https://github.com/sg0zzy/phonehaul/blob/main/VERSIONING.md) §8 — not `GITHUB_RUN_NUMBER` — and fail closed on overflow; see [Versioning exceptions](versioning-exceptions.md).
+  - [x] Fix the AppImage ARM path and Android release version code. Superseded approach (2026-10-15): `versionCode`/`versionName` are now derived from the canonical root `VERSION` file via the documented adapter in [VERSIONING.md](https://github.com/sg0zzy/phonehaul/blob/main/VERSIONING.md) (platform mapping) — not `GITHUB_RUN_NUMBER` — and fail closed on overflow; see [Versioning exceptions](versioning-exceptions.md).
   - [x] Collapse pairing to two states — connected or not connected — with the QR shown whenever not connected. `PairingSession.connected` was sticky because Android's Done button never notifies the receiver, so `pairingComplete` stayed true forever. A paired phone that declared `send-to-phone` and stays quiet for 15 s (`phoneOfflineWindowMs`) now ends the session, fails the active send item with `Phone disconnected`, and generates a new QR. `pairingComplete` is removed; both UIs read `connected`. Regression test in `receiver/tests/api.test.js`.
   - [x] Stop the desktop sidecar when supervisor heartbeats stop arriving, so a desktop app killed without running its exit hook does not leave the receiver running. The Rust backend writes a `heartbeat` line to the sidecar's stdin every 5 s; managed mode exits 15 s after the last one (`PHONEHAUL_HEARTBEAT_TIMEOUT_MS`), armed on the first heartbeat. Regression tests in `receiver/tests/managed.test.js` (SIGTERM, stdin EOF, heartbeat timeout) and `desktop/src-tauri/src/main.rs` (`exit_hook_terminates_the_sidecar`, `heartbeat_loop_writes_periodically_and_stops_with_the_sidecar`).
 - [x] Phase 4 — Refactoring.
@@ -418,3 +418,17 @@ equivalence; the digest-reset test was dropped as incidental behavior.
 
 `AGENTS.md` was corrected: unit tests are node:test files in
 `receiver/tests/*.test.js`, not Jest under `receiver/src/`.
+
+
+## Standards migration progress (2026-10-17, uncommitted)
+
+- [x] Pin and verify central standards; inventory local rules, source/version authorities, workflows and package targets.
+- [x] Replace generic version policy with project mappings and refactor AGENTS.md around central authority.
+- [x] Implement independent local identities, managed manifests/retention and fail-closed beta/stable draft publication.
+- [x] Preserve the existing stack, package IDs, signing credentials, encoded Android codes and supported targets; separate store delivery from compilation.
+- [ ] Configure signing/publication environment protection and tag rulesets in GitHub settings. Read-only audit: release has no protection; release-publication and rulesets are absent. No remote setting was changed.
+- [ ] Reconcile historical Android signer/submission codes and exercise device updates; run the new workflows after review and explicit authorization.
+
+Local verification evidence and remaining gaps are recorded in
+[DEVELOPMENT_STANDARDS.md](https://github.com/sg0zzy/phonehaul/blob/main/DEVELOPMENT_STANDARDS.md).
+No commit/tag/push, workflow dispatch, release or deployment was performed.

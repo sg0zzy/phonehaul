@@ -1,4 +1,4 @@
-package org.phonehaul.app
+package it.stefanogozzi.phonehaul
 
 import android.os.Handler
 import android.os.Looper

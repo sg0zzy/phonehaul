@@ -1,0 +1,307 @@
+# Reusable multi-platform build (DEVELOPMENT_STANDARDS.md ): one implementation used
+# by CI (push/PR), the stable release pipeline, and the manual beta release.
+# Uploads per-platform artifacts to the caller's run; publishing is done by
+# the callers, never here.
+name: Platform builds (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Commit/branch/tag to check out (empty = the run default).'
+        type: string
+        required: false
+        default: ''
+      official:
+        description: 'true builds the official stable identity (requires a stable VERSION).'
+        type: boolean
+        required: false
+        default: false
+      dev-n:
+        description: 'Development number for non-official builds (empty = run number).'
+        type: string
+        required: false
+        default: ''
+      release:
+        description: 'Official beta/stable packaging context.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  PHONEHAUL_OFFICIAL: ${{ inputs.official && '1' || '0' }}
+  PHONEHAUL_DEV_N: ${{ inputs.dev-n || '1' }}
+  PHONEHAUL_RELEASE: ${{ inputs.release && '1' || '0' }}
+  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+jobs:
+  android:
+    name: Android debug APK and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+      - name: Verify Node.js version
+        run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
+      - name: Validate canonical version (DEVELOPMENT_STANDARDS.md )
+        run: node scripts/shared/version.js json
+      # Debug APKs are a separate channel: debug-signed (ephemeral runner key,
+      # so cross-run in-place upgrades are impossible anyway), never uploaded
+      # to Play, and never a release asset. They build as dev.1 of the current
+      # core (or the caller's dev.N on a beta run); the Play channel is the
+      # signed release workflow (DEVELOPMENT_STANDARDS.md ).
+      - name: Record build version
+        run: |
+          echo "PHONEHAUL_OFFICIAL=0" >> "$GITHUB_ENV"
+          dev_n='${{ inputs.dev-n }}'
+          echo "PHONEHAUL_DEV_N=${dev_n:-1}" >> "$GITHUB_ENV"
+          echo "version: $(node scripts/shared/version.js display)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+      - name: Install Android SDK platform
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Build APK and run unit tests
+        working-directory: android
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck
+      - name: Record debug package and source
+        run: node scripts/shared/ci-info.js android-debug 'android/app/build/outputs/apk/debug/app-debug.apk'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          # The artifact name carries the commit SHA so a downloaded debug
+          # APK traces to its source (DEVELOPMENT_STANDARDS.md ); the file itself
+          # keeps the Gradle name.
+          name: phonehaul-android-debug-${{ github.sha }}
+          path: ci-output/android-debug/
+          if-no-files-found: error
+          retention-days: 14
+
+  sea:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+      - name: Verify Node.js version
+        run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
+      - name: Validate canonical version (DEVELOPMENT_STANDARDS.md )
+        run: node scripts/shared/version.js json
+      - name: Install receiver dependencies
+        run: npm ci --prefix receiver
+      - name: Run receiver tests
+        run: npm --prefix receiver test
+      - name: Install AppImage tooling (pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            x64) APPIMAGE_ARCH=x86_64 ;;
+            arm64) APPIMAGE_ARCH=aarch64 ;;
+          esac
+          curl --fail --location "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${APPIMAGE_ARCH}.AppImage" --output "$RUNNER_TEMP/appimagetool"
+          curl --fail --location "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${APPIMAGE_ARCH}" --output "$RUNNER_TEMP/appimage-runtime"
+          case "${APPIMAGE_ARCH}" in
+            x86_64)
+              expected_tool=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+              expected_runtime=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+              ;;
+            aarch64)
+              expected_tool=f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+              expected_runtime=00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+              ;;
+          esac
+          sha256sum -c <<< "$expected_tool  $RUNNER_TEMP/appimagetool"
+          sha256sum -c <<< "$expected_runtime  $RUNNER_TEMP/appimage-runtime"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimage-runtime"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+          echo "APPIMAGE_RUNTIME=$RUNNER_TEMP/appimage-runtime" >> "$GITHUB_ENV"
+      - name: Build AppImage and standalone executable
+        run: npm --prefix receiver run package:appimage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+      - name: Smoke test standalone executable
+        run: npm --prefix receiver run smoke:sea
+      - name: Verify receiver transport
+        run: node scripts/shared/ci-info.js receiver-${{ matrix.arch }} 'dist/phonehaul-${{ matrix.platform }}-${{ matrix.arch }}' 'dist/PhoneHaul-*.AppImage'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: phonehaul-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ci-output/receiver-${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  desktop:
+    name: Tauri desktop (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-24.04
+            bundles: appimage
+            # To publish a Debian package too, use `appimage,deb` and add the
+            # bundle/deb path below.
+            artifact-path: desktop/src-tauri/target/release/bundle/appimage/PhoneHaul_*.AppImage
+            artifact-name: phonehaul-desktop-linux
+          - platform: windows
+            runner: windows-2025
+            bundles: nsis
+            artifact-path: desktop/src-tauri/target/release/bundle/nsis/*
+            artifact-name: phonehaul-desktop-windows
+          - platform: macos-intel
+            runner: macos-15-intel
+            arch: x64
+            bundles: dmg
+            artifact-path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            artifact-name: phonehaul-desktop-macos-x64
+          - platform: macos-arm64
+            runner: macos-15
+            arch: arm64
+            bundles: dmg
+            artifact-path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            artifact-name: phonehaul-desktop-macos-arm64
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.platform == 'macos-intel' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            receiver/package-lock.json
+      - name: Resolve build version (DEVELOPMENT_STANDARDS.md )
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ '${{ inputs.official }}' == 'true' ]]; then
+            # Fails closed unless VERSION is a stable X.Y.Z.
+            echo "PHONEHAUL_OFFICIAL=1" >> "$GITHUB_ENV"
+          else
+            echo "PHONEHAUL_OFFICIAL=0" >> "$GITHUB_ENV"
+            dev_n='${{ inputs.dev-n }}'
+            echo "PHONEHAUL_DEV_N=${dev_n:-1}" >> "$GITHUB_ENV"
+          fi
+          echo "version: $(node scripts/shared/version.js display)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          components: clippy, rustfmt
+      - name: Install Linux Tauri dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential curl wget file libssl-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libldap2-dev libfuse2 patchelf
+      - name: Install NSIS
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          if (!(Test-Path $nsis)) { throw "NSIS installation not found at $nsis" }
+          Add-Content $env:GITHUB_PATH $nsis
+      - name: Install receiver dependencies
+        if: matrix.platform == 'linux'
+        run: npm ci --prefix receiver
+      - name: Install desktop dependencies
+        if: matrix.platform == 'linux'
+        run: npm ci --prefix desktop
+      - name: Install root check dependencies
+        if: matrix.platform == 'linux'
+        run: npm ci
+      - name: Check JavaScript and integration flow
+        if: matrix.platform == 'linux'
+        run: npm run check
+      - name: Stage receiver sidecar
+        if: matrix.platform == 'linux'
+        # tauri-build validates the bundle.resources glob (resources/phonehaul-server*)
+        # in tauri.conf.json on every `cargo` invocation, so the Rust check below
+        # requires the sidecar to exist. It is gitignored and normally staged by
+        # the build's beforeBuildCommand; stage it here so a fresh checkout passes.
+        run: npm --prefix desktop run build:sidecar
+      - name: Check Rust formatting, lint, and tests
+        if: matrix.platform == 'linux'
+        working-directory: desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy -- -D warnings
+          cargo test
+      - name: Build Linux Tauri bundles
+        if: matrix.platform == 'linux'
+        run: npm run build -- --bundles ${{ matrix.bundles }}
+        working-directory: desktop
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+      - name: Build Windows Tauri installer
+        if: matrix.platform == 'windows'
+        run: bash scripts/build-desktop-windows.sh
+        shell: bash
+      - name: Check Windows Store package identity
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+        run: |
+          if ([bool]$env:MSIX_IDENTITY_NAME -xor [bool]$env:MSIX_PUBLISHER) {
+            throw 'Set both MSIX_IDENTITY_NAME and MSIX_PUBLISHER repository variables.'
+          }
+          if (-not $env:MSIX_IDENTITY_NAME) {
+            Write-Host 'MSIX build skipped until Partner Center identity variables are configured.'
+          }
+      - name: Build unsigned Windows Store MSIX
+        if: matrix.platform == 'windows' && vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != ''
+        run: npm --prefix desktop run package:msix
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+          MSIX_VERSION: ${{ vars.MSIX_VERSION }}
+      - name: Build macOS Tauri disk image
+        if: startsWith(matrix.platform, 'macos-')
+        run: bash scripts/build-desktop-macos.sh
+      - name: Smoke test macOS receiver sidecar
+        if: startsWith(matrix.platform, 'macos-')
+        run: npm --prefix receiver run smoke:sea
+      - name: Verify desktop transport
+        shell: bash
+        run: node scripts/shared/ci-info.js desktop-${{ matrix.platform }} '${{ matrix.artifact-path }}' 'dist/msix/*.msix'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ci-output/desktop-${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 14

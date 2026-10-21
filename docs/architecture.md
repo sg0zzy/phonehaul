@@ -69,3 +69,26 @@ them through the existing paired LAN HTTPS server. `ReceiverClient` polls that
 server while connected, and `PhoneInbox` validates paths and writes all files
 directly to public Downloads through MediaStore. The Tauri desktop feeds the
 same queue (via its pickers/drops) without changing dispatch logic.
+
+## Standards rationale and data recovery
+
+The pinned architecture policy is mapped in
+[DEVELOPMENT_STANDARDS.md](https://github.com/sg0zzy/phonehaul/blob/main/DEVELOPMENT_STANDARDS.md).
+Tauri 2/Rust and Kotlin/Compose already fit the central preferences. The existing
+Node sidecar and small plain JavaScript UI remain: the shared tested transfer
+engine and native UI do not benefit from a framework rewrite. LAN HTTPS with QR
+pairing needs no cloud account, signaling service, RxDB or WebRTC migration.
+Transfer/pairing work without internet; the published privacy-policy page needs
+internet access. Privacy, scoped permissions and the loopback guard are preserved.
+
+Received content remains ordinary files under the configured destination
+(default Downloads/PhoneHaul). To export/back up, stop transfers and copy the
+whole destination tree using the OS file manager or backup tool to a separate
+location. Verify the copied names, sizes and contents. Restore into a separate
+empty destination, compare the restored content, then select that directory in
+PhoneHaul. Keep a separate backup before any replace/MOVE operation; transfer
+synchronization is not historical backup. This procedure does not export Android
+app-private pairing state; re-pair devices through the normal QR flow. Per-machine
+settings may be recreated through the UI. Do not copy signing/pairing secrets into
+public backups. Representative file-tree backup/restore validation is recorded in
+the adoption evidence; device-specific private-state recovery remains unverified.

@@ -1,261 +1,120 @@
 name: PhoneHaul builds
-
 on:
   push:
+    branches: [main]
+    tags: ['v[0-9]*.[0-9]*.[0-9]*', '!v*-dev.*']
   pull_request:
+    branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
+concurrency:
+  group: ${{ startsWith(github.ref, 'refs/tags/v') && 'official-release-lifecycle' || format('ci-{0}-{1}', github.ref, github.run_id) }}
+  cancel-in-progress: false
 jobs:
-  android:
-    name: Android debug APK and tests
+  validate:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version-file: .nvmrc
-      - name: Verify Node.js version
-        run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
-      - name: Validate canonical version (VERSIONING.md §9.6)
-        run: node scripts/shared/version.js json
-      # Debug APKs are a separate channel: debug-signed (ephemeral runner key,
-      # so cross-run in-place upgrades are impossible anyway) and never
-      # uploaded to Play. They build as dev.1 of the current core; the Play
-      # channel is the signed release workflow (VERSIONING.md §8).
-      - name: Record build version
-        run: |
-          echo "PHONEHAUL_OFFICIAL=0" >> "$GITHUB_ENV"
-          echo "PHONEHAUL_DEV_N=1" >> "$GITHUB_ENV"
-          echo "version: $(node scripts/shared/version.js display)" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
-      - name: Install Android SDK platform
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Build APK and run unit tests
-        working-directory: android
-        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: phonehaul-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-  sea:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            platform: linux
-            arch: x64
-          - runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
-        with:
-          node-version-file: .nvmrc
-      - name: Verify Node.js version
-        run: node -e "console.log(process.version); if (process.versions.node.split('.')[0] !== '24') process.exit(1)"
-      - name: Validate canonical version (VERSIONING.md §9.6)
-        run: node scripts/shared/version.js json
-      - name: Install receiver dependencies
-        run: npm ci --prefix receiver
-      - name: Run receiver tests
-        run: npm --prefix receiver test
-      - name: Install AppImage tooling (pinned)
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "${{ matrix.arch }}" in
-            x64) APPIMAGE_ARCH=x86_64 ;;
-            arm64) APPIMAGE_ARCH=aarch64 ;;
-          esac
-          curl --fail --location "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${APPIMAGE_ARCH}.AppImage" --output "$RUNNER_TEMP/appimagetool"
-          curl --fail --location "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${APPIMAGE_ARCH}" --output "$RUNNER_TEMP/appimage-runtime"
-          case "${APPIMAGE_ARCH}" in
-            x86_64)
-              expected_tool=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
-              expected_runtime=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
-              ;;
-            aarch64)
-              expected_tool=f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
-              expected_runtime=00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
-              ;;
-          esac
-          sha256sum -c <<< "$expected_tool  $RUNNER_TEMP/appimagetool"
-          sha256sum -c <<< "$expected_runtime  $RUNNER_TEMP/appimage-runtime"
-          chmod +x "$RUNNER_TEMP/appimagetool"
-          chmod +x "$RUNNER_TEMP/appimage-runtime"
-          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
-          echo "APPIMAGE_RUNTIME=$RUNNER_TEMP/appimage-runtime" >> "$GITHUB_ENV"
-      - name: Build AppImage and standalone executable
-        run: npm --prefix receiver run package:appimage
+      - name: Validate exact event source and official tag
+        id: identity
         env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-      - name: Smoke test standalone executable
-        run: npm --prefix receiver run smoke:sea
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: phonehaul-${{ matrix.platform }}-${{ matrix.arch }}
-          path: |
-            dist/phonehaul-${{ matrix.platform }}-${{ matrix.arch }}*
-            dist/PhoneHaul-*.AppImage
-          if-no-files-found: error
-
-  desktop:
-    name: Tauri desktop (${{ matrix.platform }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux
-            runner: ubuntu-24.04
-            bundles: appimage
-            # To publish a Debian package too, use `appimage,deb` and add the
-            # bundle/deb path below.
-            artifact-path: desktop/src-tauri/target/release/bundle/appimage/PhoneHaul_*.AppImage
-            artifact-name: phonehaul-desktop-linux
-          - platform: windows
-            runner: windows-2025
-            bundles: nsis
-            artifact-path: desktop/src-tauri/target/release/bundle/nsis/*
-            artifact-name: phonehaul-desktop-windows
-          - platform: macos-intel
-            runner: macos-15-intel
-            arch: x64
-            bundles: dmg
-            artifact-path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            artifact-name: phonehaul-desktop-macos-x64
-          - platform: macos-arm64
-            runner: macos-15
-            arch: arm64
-            bundles: dmg
-            artifact-path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            artifact-name: phonehaul-desktop-macos-arm64
-    runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ matrix.platform == 'macos-intel' }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: |
-            desktop/package-lock.json
-            receiver/package-lock.json
-      - name: Resolve build version (VERSIONING.md §6.2)
-        shell: bash
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            tag="${GITHUB_REF#refs/tags/v}"
-            core="$(node scripts/shared/version.js core)"
-            if [[ "$tag" != "$core" ]]; then
-              echo "CI refuses: tag v${tag} disagrees with VERSION core ${core} (§6.2)." >&2
-              exit 1
-            fi
-            echo "PHONEHAUL_OFFICIAL=1" >> "$GITHUB_ENV"
-          else
-            echo "PHONEHAUL_OFFICIAL=0" >> "$GITHUB_ENV"
+          echo "source=$GITHUB_SHA; PR head=${{ github.event.pull_request.head.sha }}; PR base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+            [[ "$version" != *-* ]]
+            node scripts/shared/official.js validate "$version"
+            git merge-base --is-ancestor HEAD origin/main
+            node scripts/shared/official.js reserved "$version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
           fi
-          echo "PHONEHAUL_DEV_N=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-          echo "version: $(node scripts/shared/version.js display)" >> "$GITHUB_STEP_SUMMARY"
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+  builds:
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/platform-builds.yml
+    with:
+      ref: ${{ github.sha }}
+      official: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  android-signed:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: validate
+    uses: ./.github/workflows/android-signed-release.yml
+    with:
+      ref: ${{ github.ref }}
+    secrets: inherit
+  stage:
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.validate.result == 'success' && needs.builds.result == 'success' }}
+    needs: [validate, builds, android-signed]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          components: clippy, rustfmt
-      - name: Install Linux Tauri dependencies
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes \
-            build-essential curl wget file libssl-dev libxdo-dev \
-            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev libldap2-dev libfuse2 patchelf
-      - name: Install NSIS
-        if: matrix.platform == 'windows'
-        run: |
-          choco install nsis --yes --no-progress
-          $nsis = "${env:ProgramFiles(x86)}\NSIS"
-          if (!(Test-Path $nsis)) { throw "NSIS installation not found at $nsis" }
-          Add-Content $env:GITHUB_PATH $nsis
-      - name: Install receiver dependencies
-        if: matrix.platform == 'linux'
-        run: npm ci --prefix receiver
-      - name: Install desktop dependencies
-        if: matrix.platform == 'linux'
-        run: npm ci --prefix desktop
-      - name: Install root check dependencies
-        if: matrix.platform == 'linux'
-        run: npm ci
-      - name: Check JavaScript and integration flow
-        if: matrix.platform == 'linux'
-        run: npm run check
-      - name: Stage receiver sidecar
-        if: matrix.platform == 'linux'
-        # tauri-build validates the bundle.resources glob (resources/phonehaul-server*)
-        # in tauri.conf.json on every `cargo` invocation, so the Rust check below
-        # requires the sidecar to exist. It is gitignored and normally staged by
-        # the build's beforeBuildCommand; stage it here so a fresh checkout passes.
-        run: npm --prefix desktop run build:sidecar
-      - name: Check Rust formatting, lint, and tests
-        if: matrix.platform == 'linux'
-        working-directory: desktop/src-tauri
-        run: |
-          cargo fmt --check
-          cargo clippy -- -D warnings
-          cargo test
-      - name: Build Linux Tauri bundles
-        if: matrix.platform == 'linux'
-        run: npm run build -- --bundles ${{ matrix.bundles }}
-        working-directory: desktop
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-      - name: Build Windows Tauri installer
-        if: matrix.platform == 'windows'
-        run: bash scripts/build-desktop-windows.sh
-        shell: bash
-      - name: Check Windows Store package identity
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        env:
-          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
-          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
-        run: |
-          if ([bool]$env:MSIX_IDENTITY_NAME -xor [bool]$env:MSIX_PUBLISHER) {
-            throw 'Set both MSIX_IDENTITY_NAME and MSIX_PUBLISHER repository variables.'
-          }
-          if (-not $env:MSIX_IDENTITY_NAME) {
-            Write-Host 'MSIX build skipped until Partner Center identity variables are configured.'
-          }
-      - name: Build unsigned Windows Store MSIX
-        if: matrix.platform == 'windows' && vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != ''
-        run: npm --prefix desktop run package:msix
-        env:
-          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
-          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
-          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
-          MSIX_VERSION: ${{ vars.MSIX_VERSION }}
-      - name: Build macOS Tauri disk image
-        if: startsWith(matrix.platform, 'macos-')
-        run: bash scripts/build-desktop-macos.sh
-      - name: Smoke test macOS receiver sidecar
-        if: startsWith(matrix.platform, 'macos-')
-        run: npm --prefix receiver run smoke:sea
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
-          name: ${{ matrix.artifact-name }}
-          path: |
-            ${{ matrix.artifact-path }}
-            dist/msix/*.msix
-          if-no-files-found: error
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: release-assets
+      - name: Verify all mandatory targets and transport hashes
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: scripts/assemble-release-assets.sh "$RELEASE_VERSION" release-assets assets-release
+      - name: Generate notes and stage verified draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          scripts/release-notes.sh "$RELEASE_VERSION" RELEASE_NOTES.md
+          node scripts/shared/publish-release.js "$RELEASE_VERSION" assets-release RELEASE_NOTES.md stage
+          echo "Review draft notes and release-manifest.json before approving release-publication: https://github.com/$GITHUB_REPOSITORY/releases" >> "$GITHUB_STEP_SUMMARY"
+  publish:
+    needs: [stage, validate]
+    environment: release-publication
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: release-assets
+      - name: Verify all mandatory targets and transport hashes
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: scripts/assemble-release-assets.sh "$RELEASE_VERSION" release-assets assets-release
+      - name: Confirm approval controls and publish verified draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Fail closed when the environment was auto-created without reviewers.
+          gh api "repos/$GITHUB_REPOSITORY/environments/release-publication" --jq '.protection_rules | any(.type == "required_reviewers")' | grep -qx true
+          PHONEHAUL_NOTES_REVIEWED=1 node scripts/shared/publish-release.js "$RELEASE_VERSION" assets-release RELEASE_NOTES.md

@@ -1,4 +1,4 @@
-package org.phonehaul.app
+package it.stefanogozzi.phonehaul
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

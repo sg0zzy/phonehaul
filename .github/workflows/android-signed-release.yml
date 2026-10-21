@@ -2,9 +2,13 @@ name: Android signed release
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Tag/commit to build (empty = the run default).'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -14,46 +18,41 @@ jobs:
     name: Build signed APK and Play bundle
     runs-on: ubuntu-24.04
     environment: release
-    env:
-      # Optional: set PLAY_SERVICE_ACCOUNT_JSON in the `release` environment
-      # to auto-upload the AAB to the Play internal track after a successful
-      # tag build. Unset = artifact only (manual upload), so enabling this is
-      # a pure config change. Promotion beyond internal stays manual
-      # (VERSIONING.md §6.6: publication is a separate auditable action).
-      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
-      - uses: actions/checkout@fbc6f3992d4b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version-file: .nvmrc
-      # Official builds come from a v* tag; CI validates tag, VERSION and
-      # commit consistency and fails on disagreement (VERSIONING.md §6.2).
+      # Official stable builds come from a v* tag; CI validates tag, VERSION
+      # and commit consistency and fails on disagreement (DEVELOPMENT_STANDARDS.md ).
       # A workflow_dispatch run is only accepted on the commit already tagged
       # v<core>, so an official identity is never built from untagged code
-      # (§6.5). The adapter derives versionName=X.Y.Z and the stable
-      # versionCode slot (§8).
-      - name: Validate release version (VERSIONING.md §6.2)
+      #. The adapter derives versionName=X.Y.Z and the stable
+      # versionCode slot.
+      # A beta tag (vX.Y.Z-dev.N, pushed by the Beta release workflow) builds
+      # the same signed identity with versionName=X.Y.Z-dev.N and dev slot N
+      #: same release key as stable, but never uploaded to Play.
+      - name: Validate official tagged source
         shell: bash
+        env:
+          SELECTED_REF: ${{ inputs.ref || github.ref }}
         run: |
           set -euo pipefail
-          core="$(node scripts/shared/version.js core)"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            tag="${GITHUB_REF#refs/tags/v}"
-            if [[ "$tag" != "$core" ]]; then
-              echo "CI refuses: tag v${tag} disagrees with VERSION core ${core} (§6.2)." >&2
-              exit 1
-            fi
+          version="${SELECTED_REF#refs/tags/}"
+          version="${version#v}"
+          node scripts/shared/official.js validate "$version"
+          git merge-base --is-ancestor HEAD origin/main
+          if [[ "$version" == *-dev.* ]]; then
+            echo "PHONEHAUL_OFFICIAL=0" >> "$GITHUB_ENV"
+            echo "PHONEHAUL_DEV_N=${version#*-dev.}" >> "$GITHUB_ENV"
           else
-            git fetch -q --no-tags origin "refs/tags/v${core}:refs/tags/v${core}" 2>/dev/null || true
-            tagged="$(git rev-parse -q --verify "refs/tags/v${core}^{commit}" || true)"
-            if [[ -z "$tagged" || "$tagged" != "$(git rev-parse HEAD)" ]]; then
-              echo "CI refuses: untagged run; official builds must run on the commit tagged v${core} (§6.2/§6.5)." >&2
-              echo "Tag with scripts/release.sh, or use the PhoneHaul builds workflow for dev APKs." >&2
-              exit 1
-            fi
+            echo "PHONEHAUL_OFFICIAL=1" >> "$GITHUB_ENV"
           fi
-          echo "PHONEHAUL_OFFICIAL=1" >> "$GITHUB_ENV"
-          echo "version: ${core} (official)" >> "$GITHUB_STEP_SUMMARY"
+          echo "PHONEHAUL_RELEASE=1" >> "$GITHUB_ENV"
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
@@ -102,34 +101,26 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease :app:bundleRelease
+      - name: Verify final signing identity and package bytes
+        env:
+          ANDROID_SIGNER_SHA256: ${{ vars.ANDROID_SIGNER_SHA256 }}
+        run: |
+          set -euo pipefail
+          : "${ANDROID_SIGNER_SHA256:?Declare the expected public APK signer SHA-256 first}"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk > "$RUNNER_TEMP/apk-signature.txt"
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-signature.txt")"
+          [[ "${actual,,}" == "${ANDROID_SIGNER_SHA256,,}" ]] || { echo 'APK signer mismatch'; exit 1; }
+          jarsigner -verify android/app/build/outputs/bundle/release/app-release.aab > "$RUNNER_TEMP/aab-signature.txt"
+          grep -q 'jar verified.' "$RUNNER_TEMP/aab-signature.txt"
+          upload_actual="$(keytool -printcert -jarfile android/app/build/outputs/bundle/release/app-release.aab | sed -n 's/.*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
+          [[ "$upload_actual" == "${ANDROID_SIGNER_SHA256,,}" ]] || { echo 'AAB upload signer mismatch'; exit 1; }
+          node scripts/shared/ci-info.js android-signed 'android/app/build/outputs/apk/release/*.apk' 'android/app/build/outputs/bundle/release/*.aab'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: phonehaul-android-release
-          path: |
-            android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/bundle/release/*.aab
+          path: ci-output/android-signed/
           if-no-files-found: error
-      # Automatic Play upload (optional): only runs when the service-account
-      # secret exists. Internal track only; production promotion stays manual.
-      - name: Write Play service account key
-        if: env.PLAY_SERVICE_ACCOUNT_JSON != ''
-        run: |
-          set -euo pipefail
-          key_file="$RUNNER_TEMP/play-service-account.json"
-          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$key_file"
-          chmod 600 "$key_file"
-          echo "PLAY_SERVICE_ACCOUNT_FILE=$key_file" >> "$GITHUB_ENV"
-      - name: Upload AAB to Play internal track
-        if: env.PLAY_SERVICE_ACCOUNT_JSON != ''
-        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
-        with:
-          serviceAccountJson: ${{ env.PLAY_SERVICE_ACCOUNT_FILE }}
-          packageName: org.phonehaul.app
-          releaseFile: android/app/build/outputs/bundle/release/*.aab
-          track: internal
-          # Upload + attach to the internal track, but do not submit for
-          # review; the human promotes it from Play Console (§6.6).
-          changesNotSentForReview: 'true'
-      - name: Note skipped Play upload
-        if: env.PLAY_SERVICE_ACCOUNT_JSON == ''
-        run: echo "PLAY_SERVICE_ACCOUNT_JSON not set; skipping automatic Play upload (artifact only)." >> "$GITHUB_STEP_SUMMARY"
+          retention-days: 14
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/phonehaul-release.jks" "$RUNNER_TEMP/phonehaul-signing-check.p12" "$RUNNER_TEMP/phonehaul-signing-check.log"

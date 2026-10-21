@@ -1,4 +1,4 @@
-package org.phonehaul.app
+package it.stefanogozzi.phonehaul
 
 enum class FileState {
     SELECTED,

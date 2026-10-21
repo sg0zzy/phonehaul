@@ -1,5 +1,11 @@
+# Git exclusions required by the pinned dev-standards ARTIFACTS.md policy
+# (see DEVELOPMENT_STANDARDS.md). `/local_artifacts/` is root-anchored because
+# it is the managed artifact root; the other patterns apply at any depth.
+/local_artifacts/
 node_modules/
-/dist/
+dist/
+__pycache__/
+target/
 .build-state/
 receiver/.build/
 *.phonehaul-partial
@@ -17,3 +23,17 @@ desktop/src-tauri/gen/
 *.keystore
 desktop/src-tauri/bundle-support/
 .zed/
+# CI staging and release transport (local workflows own the implementation)
+/ci-output/
+/release-assets/
+/assets-release/
+/SHA256SUMS.txt
+/RELEASE_NOTES.md
+
+# Per-machine state and signing material
+settings.json
+*.p12
+*.pfx
+*.key
+*.pem
+/.phonehaul-local-counter-initialized

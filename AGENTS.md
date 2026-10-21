@@ -1,17 +1,31 @@
 # AGENTS.md
 
-Durable rules for AI-assisted and human contributors. Read this before editing.
+Read [DEVELOPMENT_STANDARDS.md](DEVELOPMENT_STANDARDS.md) before relevant work.
+Consult and verify the applicable central documents at its exact pinned commit;
+central MUST/MUST NOT requirements take precedence over conflicting local
+conventions. Use the recorded retrieval/digest procedure, never a moving branch.
+If no verified policy source is available, report it and avoid policy-dependent
+release/deletion work; independent safe inspection and tests may continue.
+
+The sections below are PhoneHaul implementation and safety instructions.
+Version operations and recovery: [VERSIONING.md](VERSIONING.md). Build commands:
+[docs/development.md](docs/development.md). Build/distribution matrices, signing
+profiles, exceptions and compliance evidence: DEVELOPMENT_STANDARDS.md.
+Use repository-owned tools; do not add shared executable dependencies or rewrite
+working components to match a technology preference. A bump requires an explicit
+request; never infer permission to commit, tag, push, release or deploy from a
+build request or configuration mode. Record unmet MUST requirements as gaps.
 
 ## Gate (before every commit)
 
 Run the full gate and get it to pass:
 
 ```sh
-npm run check          # = check:format && lint && check:docs && test && smoke
+npm run check          # = check:format && lint && check:docs && test:standards && test && smoke
 ```
 
 - **format** — Prettier auto-fixes; `npm run format` applies it. Do not hand-format.
-- **lint** — ESLint over `receiver/`, `desktop/`, `integration-tests/`.
+- **lint** — ESLint over `receiver/`, `desktop/`, `integration-tests/`, `scripts/`.
 - **test** — receiver unit tests.
 - **smoke** — `integration-tests/smoke.js` end-to-end.
 - **check:docs** — `integration-tests/check-docs-links.js` validates the
@@ -19,6 +33,7 @@ npm run check          # = check:format && lint && check:docs && test && smoke
   index coverage, repo blob links against the working tree).
 
 Rust (desktop) and Kotlin (android) gates run in CI; for local edits use:
+
 - Rust: `cargo fmt --check` · `cargo clippy -- -D warnings` · `cargo test` (in `desktop/src-tauri`)
 - Kotlin: `./gradlew :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck` (in `android/`)
 
@@ -75,7 +90,7 @@ Rust (desktop) and Kotlin (android) gates run in CI; for local edits use:
   enforces this. `docs/privacy.html` is the policy URL the Android app and
   Google Play Console point at — keep it published at that exact path.
 - Update the Phase checkboxes in `docs/REFACTORING_andre.md` as work lands,
-  then commit.
+  when applicable; commit only when explicitly authorized.
 
 ## Protocol and security (do not break)
 
@@ -83,7 +98,7 @@ Rust (desktop) and Kotlin (android) gates run in CI; for local edits use:
   **HTTP 403** for any non-loopback host/origin ("Invalid management
   host/origin"). Do not weaken it.
 - Transfer item statuses: `queued, sending, committed, skipped,
-  already_present, failed`. Send-queue states:
+already_present, failed`. Send-queue states:
   `preparing, queued, sending, completed, failed, cancelled`. Max file
   64 GiB.
 - Error codes: `401` (bad/expired session), `403` (loopback guard), `404`,

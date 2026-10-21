@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-
-phonehaul_use_node
-phonehaul_build_android
+root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$root/scripts/build.sh" dev android "$@"

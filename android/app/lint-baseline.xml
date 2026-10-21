@@ -7,7 +7,7 @@
         errorLine1="                    application.stopService(Intent(application, TransferService::class.java))"
         errorLine2="                                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/org/phonehaul/app/PhoneHaulViewModel.kt"
+            file="src/main/java/it/stefanogozzi/phonehaul/PhoneHaulViewModel.kt"
             line="528"
             column="45"/>
     </issue>
@@ -18,7 +18,7 @@
         errorLine1="        if (transferServiceStarted) getApplication&lt;Application>().stopService(Intent(getApplication(), TransferService::class.java))"
         errorLine2="                                                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/org/phonehaul/app/PhoneHaulViewModel.kt"
+            file="src/main/java/it/stefanogozzi/phonehaul/PhoneHaulViewModel.kt"
             line="535"
             column="79"/>
     </issue>
@@ -117,7 +117,7 @@
         errorLine1="                object : X509TrustManager {"
         errorLine2="                ~~~~~~">
         <location
-            file="src/main/java/org/phonehaul/app/ReceiverClient.kt"
+            file="src/main/java/it/stefanogozzi/phonehaul/ReceiverClient.kt"
             line="48"
             column="17"/>
     </issue>
@@ -150,7 +150,7 @@
         errorLine1="            preferences.edit().putBoolean(&quot;notification_permission_requested&quot;, true).apply()"
         errorLine2="            ~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/org/phonehaul/app/MainActivity.kt"
+            file="src/main/java/it/stefanogozzi/phonehaul/MainActivity.kt"
             line="120"
             column="13"/>
     </issue>
@@ -161,7 +161,7 @@
         errorLine1="        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))"
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/org/phonehaul/app/MainActivity.kt"
+            file="src/main/java/it/stefanogozzi/phonehaul/MainActivity.kt"
             line="538"
             column="58"/>
     </issue>

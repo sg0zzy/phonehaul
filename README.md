@@ -31,11 +31,14 @@ skipped (configurable) rather than re-downloaded.
 ## Download
 
 Builds are produced by CI (`.github/workflows/`). Download from a workflow run's
-**Files** tab, or from GitHub Releases once tagged:
+**Files** tab, or from GitHub Releases: **stable** releases (tag `vX.Y.Z`) are
+the normal downloads; **beta** prereleases (tag `vX.Y.Z-dev.N`, marked
+"pre-release") are development builds for testers — expect breakage, and they
+never appear under "latest".
 
 | You are on | Get |
 |------------|-----|
-| **Android** | the `phonehaul-android-debug` APK/AAB artifact |
+| **Android** | the `phonehaul-android-debug-<sha>` APK (debug builds), or the signed APK/AAB attached to a release |
 | **Linux (receiver only)** | `phonehaul-linux-x64` / `phonehaul-linux-arm64` (receiver + AppImage) |
 | **Linux / macOS / Windows (desktop app)** | `phonehaul-desktop-{linux, windows, macos-x64, macos-arm64}` |
 

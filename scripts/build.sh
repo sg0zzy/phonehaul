@@ -1,28 +1,15 @@
 #!/usr/bin/env bash
-# Local development builds (VERSIONING.md §4, §10).
-#
-#   scripts/build.sh dev [target]
-#
-# Builds the current worktree (dirty allowed, no commit required) as a
-# uniquely identified development build:
-#   - advances the local dev.N counter (gitignored .build-state/, reset per core)
-#   - creates a unique build ID (UTC timestamp + PID)
-#   - exports PHONEHAUL_DEV_N / PHONEHAUL_VERSION so every component of one
-#     invocation shares one version
-#   - archives outputs under dist/dev/<version>/<build-id>/, never overwrites
-#   - writes a machine-readable build-manifest.json (§4.7)
-#
-# Targets: all (default) | receiver | android | appimage | desktop-linux
-# dist/ and .build-state/ are gitignored.
+# Managed local builds. See docs/development.md and DEVELOPMENT_STANDARDS.md.
+# Dirty sources allowed; all selected targets must succeed; outputs are retained.
 set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 usage() {
   cat <<'EOF'
-usage: scripts/build.sh dev [receiver|android|appimage|desktop-linux|all]
+usage: scripts/build.sh dev [receiver|android|appimage|desktop-linux|desktop-windows|desktop-macos|all]
 
 Build the current worktree (dirty allowed) as a uniquely identified
-development build under dist/dev/<version>/<build-id>/.
+development build under local_artifacts/<build-id>/.
 EOF
 }
 
@@ -34,7 +21,7 @@ shift
 target="${1:-all}"
 if [[ $# -gt 0 ]]; then shift; fi
 case "$target" in
-  receiver | android | appimage | desktop-linux | all) ;;
+  receiver | android | appimage | desktop-linux | desktop-windows | desktop-macos | all) ;;
   -h | --help)
     usage
     exit 0
@@ -51,46 +38,44 @@ git -C "$PHONEHAUL_ROOT" rev-parse --git-dir >/dev/null 2>&1 ||
 
 phonehaul_use_node
 phonehaul_install_receiver_deps
-
-# --- build identity (shared by all child builds) -------------------------------
-export PHONEHAUL_ROOT
-export PHONEHAUL_DEV_N
+if [[ "$target" == appimage || "$target" == all ]]; then phonehaul_prepare_appimage_tools; fi
+cd "$PHONEHAUL_ROOT"
+mkdir -p "$PHONEHAUL_ROOT/.build-state"
+archive_lock="$PHONEHAUL_ROOT/.build-state/artifacts.lock"
+phonehaul_lock "$archive_lock"
+trap 'phonehaul_unlock "$archive_lock"' EXIT
+# Hold the same lock across compilation: native intermediate paths are shared.
+export PHONEHAUL_ROOT PHONEHAUL_DEV_N PHONEHAUL_BUILD_ID PHONEHAUL_VERSION
+export PHONEHAUL_CHANNEL=local
 PHONEHAUL_DEV_N="$(phonehaul_next_dev_n)"
-export PHONEHAUL_BUILD_ID
 PHONEHAUL_BUILD_ID="$(phonehaul_build_id)"
-export PHONEHAUL_VERSION
 PHONEHAUL_VERSION="$(phonehaul_display_version)"
+export PHONEHAUL_CORE
+PHONEHAUL_CORE="$(phonehaul_core_version)"
 export PHONEHAUL_COMMIT
 PHONEHAUL_COMMIT="$(phonehaul_git_commit)"
-export PHONEHAUL_DIRTY
-PHONEHAUL_DIRTY=0
-if phonehaul_git_is_dirty; then
-  PHONEHAUL_DIRTY=1
-  # Preserve the actual inputs: SHA + dirty alone cannot reconstruct source.
-  mkdir -p "$PHONEHAUL_ROOT/.build-state/diffs"
-  export PHONEHAUL_DIFF_FILE
-  PHONEHAUL_DIFF_FILE="$PHONEHAUL_ROOT/.build-state/diffs/$PHONEHAUL_BUILD_ID.patch"
-  git -C "$PHONEHAUL_ROOT" diff --binary HEAD > "$PHONEHAUL_DIFF_FILE"
-  # Untracked files are not in `git diff`; record their digests too.
-  export PHONEHAUL_UNTRACKED_FILE
-  PHONEHAUL_UNTRACKED_FILE="$PHONEHAUL_DIFF_FILE.untracked"
-  : > "$PHONEHAUL_UNTRACKED_FILE"
-  while IFS= read -r -d '' untracked; do
-    printf '%s  %s\n' "$(sha256sum -- "$untracked" | cut -d' ' -f1)" "$untracked" >> "$PHONEHAUL_UNTRACKED_FILE"
-  done < <(git -C "$PHONEHAUL_ROOT" ls-files --others --exclude-standard -z)
-fi
+export PHONEHAUL_DIRTY=0
+if phonehaul_git_is_dirty; then PHONEHAUL_DIRTY=1; fi
 export PHONEHAUL_SOURCE_DIGEST
 PHONEHAUL_SOURCE_DIGEST="$(phonehaul_source_digest)"
+export PHONEHAUL_TARGETS_JSON='[]'
+node scripts/shared/artifacts.js start "$PHONEHAUL_BUILD_ID"
+finish() {
+  local status=$?
+  if ((status != 0)); then
+    PHONEHAUL_TARGETS_JSON="$(node -e 'const a=JSON.parse(process.env.PHONEHAUL_TARGETS_JSON);a.push({id:process.argv[1],required:true,outcome:"failed",reason:"see compilation log"});console.log(JSON.stringify(a))' "$target")"
+    export PHONEHAUL_TARGETS_JSON
+    node "$PHONEHAUL_ROOT/scripts/shared/artifacts.js" failed "$PHONEHAUL_BUILD_ID" "target $target failed (exit $status); inspect preceding build log" || true
+  fi
+  phonehaul_unlock "$archive_lock"
+}
+trap finish EXIT
 export PHONEHAUL_PLATFORM
 PHONEHAUL_PLATFORM="$(cd "$PHONEHAUL_ROOT" && node -e "import('./scripts/shared/platform.js').then((m) => process.stdout.write(m.normalizedPlatform()))")"
 export PHONEHAUL_ARCH
 PHONEHAUL_ARCH="$(node -p 'process.arch')"
-export PHONEHAUL_TOOLCHAIN
-PHONEHAUL_TOOLCHAIN="node $(node -p 'process.versions.node')"
-export PHONEHAUL_LOCKFILES
-PHONEHAUL_LOCKFILES="$PHONEHAUL_ROOT/receiver/package-lock.json"
-
-archive_root="$PHONEHAUL_ROOT/dist/dev/$PHONEHAUL_VERSION/$PHONEHAUL_BUILD_ID"
+# --- exclusive managed storage -----------------------------------------------
+archive_root="$PHONEHAUL_ARTIFACTS_DIR/$PHONEHAUL_BUILD_ID"
 echo "PhoneHaul dev build $PHONEHAUL_VERSION (build $PHONEHAUL_BUILD_ID, commit ${PHONEHAUL_COMMIT:0:9}, dirty=$PHONEHAUL_DIRTY)"
 echo "  archive: $archive_root"
 
@@ -99,6 +84,7 @@ files=()
 collect() {
   products+=("$1")
   files+=("$2")
+  PHONEHAUL_TARGETS_JSON="$(node -e 'const a=JSON.parse(process.env.PHONEHAUL_TARGETS_JSON);a.push({id:process.argv[1],required:true,outcome:"succeeded"});console.log(JSON.stringify(a))' "$1")"
 }
 
 cd "$PHONEHAUL_ROOT"
@@ -120,14 +106,24 @@ case "$target" in
       *) phonehaul_die "unsupported AppImage host architecture: $arch" ;;
     esac
     collect appimage "$PHONEHAUL_ROOT/dist/PhoneHaul-$appimage_arch.AppImage"
+    collect receiver-executable "$PHONEHAUL_ROOT/dist/phonehaul-linux-$(node -p 'process.arch')"
     ;;
-  desktop-linux)
-    bash "$PHONEHAUL_ROOT/scripts/build-desktop-linux.sh" "$@"
+  desktop-linux | desktop-windows | desktop-macos)
+    host="$(uname -s)"
+    case "$target:$host" in
+      desktop-linux:Linux|desktop-windows:MINGW*|desktop-windows:MSYS*|desktop-macos:Darwin) ;;
+      *) phonehaul_die "unsupported host $host for $target" ;;
+    esac
+    bash "$PHONEHAUL_ROOT/scripts/build-${target}.sh" "$@"
     shopt -s nullglob
-    images=("$PHONEHAUL_ROOT"/desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+    case "$target" in
+      desktop-linux) images=("$PHONEHAUL_ROOT"/desktop/src-tauri/target/release/bundle/appimage/*"$PHONEHAUL_VERSION"*.AppImage) ;;
+      desktop-windows) images=("$PHONEHAUL_ROOT"/desktop/src-tauri/target/release/bundle/nsis/*"$PHONEHAUL_VERSION"*.exe) ;;
+      desktop-macos) images=("$PHONEHAUL_ROOT"/desktop/src-tauri/target/release/bundle/dmg/*"$PHONEHAUL_VERSION"*.dmg) ;;
+    esac
     shopt -u nullglob
-    ((${#images[@]} > 0)) || phonehaul_die "the desktop build produced no AppImage."
-    collect desktop "${images[-1]}"
+    ((${#images[@]} > 0)) || phonehaul_die "the desktop build produced no package"
+    for image in "${images[@]}"; do collect "$target" "$image"; done
     ;;
   all)
     npm run build
@@ -142,12 +138,14 @@ case "$target" in
       *) phonehaul_die "unsupported AppImage host architecture: $arch" ;;
     esac
     collect appimage "$PHONEHAUL_ROOT/dist/PhoneHaul-$appimage_arch.AppImage"
+    collect receiver-executable "$PHONEHAUL_ROOT/dist/phonehaul-linux-$(node -p 'process.arch')"
     ;;
 esac
 
-# --- archive (never overwrite) + manifest --------------------------------------
-((${#files[@]} > 0)) || phonehaul_die "no artifacts were produced."
-mkdir -p "$archive_root"
+# --- archive (never overwrite) + manifest + retention -------------------------
+(( ${#files[@]} > 0 )) || phonehaul_die "no artifacts were produced."
+[[ "$(phonehaul_source_digest)" == "$PHONEHAUL_SOURCE_DIGEST" ]] ||
+  phonehaul_die "source/config inputs changed during compilation; outputs retained as failed, rebuild from stable inputs"
 archived=()
 for i in "${!files[@]}"; do
   file="${files[$i]}"
@@ -159,9 +157,24 @@ for i in "${!files[@]}"; do
   cp -p -- "$file" "$dest"
   archived+=("$dest")
 done
-if [[ -n "${PHONEHAUL_DIFF_FILE:-}" ]]; then
-  cp -p -- "$PHONEHAUL_DIFF_FILE" "$archive_root/worktree.patch"
-  cp -p -- "$PHONEHAUL_UNTRACKED_FILE" "$archive_root/untracked.sha256"
-fi
-node "$PHONEHAUL_ROOT/scripts/shared/build-manifest.js" "$archive_root" "phonehaul-$target" "${archived[@]}"
+# Target platforms of this invocation: android builds target android; the
+# host-built binaries target the host platform.
+platforms=""
+for product in "${products[@]}"; do
+  case "$product" in
+    android) platform=android ;;
+    *) platform="$PHONEHAUL_PLATFORM" ;;
+  esac
+  [[ " $platforms " == *" $platform "* ]] || platforms+="$platform "
+done
+# build-info.json is written last: its presence marks the build as completed.
+export PHONEHAUL_COMPLETION_SEQ
+PHONEHAUL_COMPLETION_SEQ="$(node "$PHONEHAUL_ROOT/scripts/shared/artifacts.js" sequence)"
+node "$PHONEHAUL_ROOT/scripts/shared/build-info.js" "$archive_root" "phonehaul-$target" "${platforms% }" "${archived[@]}"
 echo "Archived: $archive_root"
+# Retention runs only after a fully successful archive; a cleanup
+# failure must not fail the build, and cleanup never runs on build failure
+# (this point is only reached on success).
+if ! PHONEHAUL_LOCK_HELD=1 "$PHONEHAUL_ROOT/scripts/cleanup-artifacts.sh"; then
+  echo "warning: retention cleanup failed; artifacts were archived, run scripts/cleanup-artifacts.sh manually" >&2
+fi

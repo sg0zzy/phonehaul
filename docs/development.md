@@ -2,7 +2,7 @@
 
 Build, run, test, and release the PhoneHaul receiver, desktop app, and Android app.
 
-This guide is the single source of truth for **developer** tasks (build, release, env vars, settings). User-facing docs (what it is, how to download/use, troubleshooting) live in [README.md](https://github.com/sg0zzy/phonehaul/blob/main/README.md).
+Central policy is pinned in [DEVELOPMENT_STANDARDS.md](https://github.com/sg0zzy/phonehaul/blob/main/DEVELOPMENT_STANDARDS.md). This guide describes PhoneHaul commands and implementation (build, release, env vars, settings). User-facing docs (what it is, how to download/use, troubleshooting) live in [README.md](https://github.com/sg0zzy/phonehaul/blob/main/README.md).
 
 ## Repository layout
 
@@ -26,14 +26,14 @@ This guide is the single source of truth for **developer** tasks (build, release
 
 ## Prerequisites
 
-| Area | Toolchain | Install |
-|------|-----------|---------|
-| Node (all) | **Node.js 24** — [.nvmrc](https://github.com/sg0zzy/phonehaul/blob/main/.nvmrc) pins `24.21.0` | `nvm use` (or install 24) |
-| receiver | Node 24 | `npm ci --prefix receiver` |
-| desktop (Tauri) | Node 24 + Rust | `npm ci --prefix receiver && npm ci --prefix desktop` |
-| desktop (Tauri, Linux) | Rust + GTK/WebKit2 dev libs | see **Linux** below |
-| desktop (Tauri, Windows) | Rust + NSIS | see **Windows** below |
-| android | JDK 17 + Android SDK | `sdkmanager "platforms;android-36" "build-tools;36.0.0"` |
+| Area                     | Toolchain                                                                                      | Install                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Node (all)               | **Node.js 24** — [.nvmrc](https://github.com/sg0zzy/phonehaul/blob/main/.nvmrc) pins `24.21.0` | `nvm use` (or install 24)                                |
+| receiver                 | Node 24                                                                                        | `npm ci --prefix receiver`                               |
+| desktop (Tauri)          | Node 24 + Rust                                                                                 | `npm ci --prefix receiver && npm ci --prefix desktop`    |
+| desktop (Tauri, Linux)   | Rust + GTK/WebKit2 dev libs                                                                    | see **Linux** below                                      |
+| desktop (Tauri, Windows) | Rust + NSIS                                                                                    | see **Windows** below                                    |
+| android                  | JDK 17 + Android SDK                                                                           | `sdkmanager "platforms;android-36" "build-tools;36.0.0"` |
 
 **All JS/TS installs use `npm ci`** (the locked `package-lock.json` files). Never hand-edit a lockfile or run a plain `npm install`.
 
@@ -47,6 +47,7 @@ npm run smoke:sea --prefix receiver   # standalone SEA smoke test
 ```
 
 The receiver listens on:
+
 - the **LAN port** `PHONEHAUL_TRANSFER_PORT` (default `57322`; `0` = random, see env vars below) — all interfaces on Linux;
 - the **UI** on `127.0.0.1:<uiPort>` (loopback only; the UI is never exposed on the LAN).
 
@@ -117,6 +118,7 @@ chmod +x dist/PhoneHaul-*.AppImage
 ```
 
 Outputs:
+
 - `dist/PhoneHaul-x86_64.AppImage` (or `dist/PhoneHaul-aarch64.AppImage`;
   Linux only)
 - `dist/phonehaul-linux-x64` (or `-arm64`) — SEA executable, also works on Linux
@@ -129,7 +131,7 @@ Run either:
 ```
 
 > **Note:** the standalone receiver AppImage is **Linux-only**. On Linux you
-> also have the *desktop* app's AppImage — see
+> also have the _desktop_ app's AppImage — see
 > [README](https://github.com/sg0zzy/phonehaul/blob/main/README.md#which-appimage-do-i-pick-on-linux) for which one to pick.
 
 ## Building the Android app
@@ -197,62 +199,89 @@ bash scripts/build-desktop-macos.sh
 
 ## Versioning and builds
 
-The repository-root [`VERSION`](https://github.com/sg0zzy/phonehaul/blob/main/VERSION)
-file is the single source of truth for the version: `X.Y.Z` (release state) or
-`X.Y.Z-dev` (development state). The full contract is
-[VERSIONING.md](https://github.com/sg0zzy/phonehaul/blob/main/VERSIONING.md);
-platform deviations are listed in [Versioning exceptions](versioning-exceptions.md).
-The development number `N` and the official flag are **never** stored in the
-tree — builds supply them via `PHONEHAUL_DEV_N` / `PHONEHAUL_OFFICIAL=1`.
+Policy, matrices, signing and unresolved gaps are recorded in
+[DEVELOPMENT_STANDARDS.md](https://github.com/sg0zzy/phonehaul/blob/main/DEVELOPMENT_STANDARDS.md).
+[VERSIONING.md](https://github.com/sg0zzy/phonehaul/blob/main/VERSIONING.md)
+maps the single root `VERSION` authority and version-operation recovery.
 
 ```sh
-./scripts/version.sh show              # canonical + derived display/codes
-./scripts/version.sh bump patch        # 0.1.1-dev -> 0.1.2-dev (counter resets)
-./scripts/version.sh set 0.2.0         # dev -> stable transition
-
-./scripts/build.sh dev receiver        # dev build, unique non-overwriting archive
-./scripts/build.sh dev desktop-linux   # Tauri AppImage (version injected)
-./scripts/build.sh dev android         # debug APK (versionName/versionCode derived)
-
-./scripts/release.sh prepare 0.2.0     # clean tree + checks -> commit + tag v0.2.0
-./scripts/release.sh publish 0.2.0     # push branch + tag (starts official CI)
+scripts/version.sh show
+scripts/version.sh bump patch --dry-run
+scripts/release.sh prepare 0.2.0 --dry-run
+scripts/build.sh dev receiver
+scripts/build.sh dev android
+scripts/build.sh dev appimage
+scripts/build.sh dev desktop-linux
+scripts/cleanup-artifacts.sh --dry-run
+scripts/cleanup-artifacts.sh --list
 ```
 
-Dev builds archive every artifact under
-`dist/dev/<version>/<build-id>/<product>/` together with a
-`build-manifest.json` (version, build id, commit, dirty flag, source digest,
-lockfile digests, per-file SHA-256). Existing paths are never overwritten; a
-dirty worktree additionally stores the patch and untracked-file digests under
-`.build-state/diffs/`. The per-workstation `dev.N` counter lives in
-gitignored `.build-state/dev-counter` and resets when the core changes.
+A managed invocation archives final packages under
+`local_artifacts/<build-id>/<target>/`, with `build-info.json` recording state,
+declared/effective versions, source SHA and SHA-256 input identity, environment,
+lockfile hashes, outcomes and artifact hashes. Dirty work requires no commit;
+local versions are `X.Y.Z-local.N`. Compilation primitives above use `dist/`,
+Gradle and Cargo directories as intermediates. Use the managed command for final
+local output. `scripts/build-all.sh` retains the existing receiver, Android,
+standalone AppImage and Linux desktop selection through managed invocations.
 
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `PHONEHAUL_OFFICIAL` | unset | `1` marks an official build; requires a stable `VERSION` (no `-dev`). |
-| `PHONEHAUL_DEV_N` | `1` | Development number for dev builds (positive integer). |
-| `PHONEHAUL_VERSION_FILE` | `VERSION` | Override the canonical file (validation probes/tests). |
-| `PHONEHAUL_SKIP_CHECKS` | unset | `1` skips `npm run check` inside `release.sh prepare` (emergency only). |
-| `MSIX_VERSION` | derived | Override the MSIX Identity Version (normally derived). |
+Windows (`scripts/build.sh dev desktop-windows`, Git Bash) and macOS
+(`scripts/build.sh dev desktop-macos`) require matching hosts and are **unverified
+on Linux**. No cross-compilation support is implied. Native package scripts remain
+the same compilation implementations used by CI.
 
-CI validates the canonical version on every build
-(`node scripts/shared/version.js json`) and refuses tag builds whose `v*` tag
-disagrees with `VERSION`.
+Inputs cover tracked working files/deletions, nonignored untracked files and
+`android/local.properties`; source symlinks/submodules require an explicit mapping
+and fail closed. Source/config changes between the pre/post compilation checks
+fail the invocation. Secret values are never copied into build manifests or
+source archives. Custom ignored compilation inputs must be included in the input
+scope before use. Native tools may regenerate ignored caches/intermediates.
+
+The shared lock `.build-state/artifacts.lock` covers compilation, counter
+allocation, completion and cleanup. It is never stolen because of age. If an
+interrupted process leaves it behind, inspect running builders and the affected
+manifest before explicitly removing only that abandoned empty lock directory.
+Counters and completion sequence survive cleanup in
+`.build-state/artifact-counters.json`; do not delete/reset that ledger or its
+initialization sentinel or the root `.phonehaul-local-counter-initialized` recovery marker. If lost, restore a backup or reconcile durable high-water
+records; the manager refuses to guess. Legacy archives stay unrecognized and are
+never automatically deleted.
+
+Retention uses locked completion sequence and defaults to 10 successful,
+unprotected builds. `--keep N` permits a nonnegative override; `0` removes every
+eligible build, including the newest. Failed/in-progress/unknown/malformed,
+ambiguous-sequence, symlinked and protected directories remain untouched. Cleanup
+runs only after success, and a maintenance failure is reported separately.
+`--dry-run` lists candidates and retained/skipped identities without deleting.
+Use `scripts/cleanup-artifacts.sh --protect BUILD_ID` for race-free protection;
+`--unprotect BUILD_ID --yes` and `--remove BUILD_ID --yes` require explicit
+selection/confirmation. An observed `.keep` of any kind protects a directory;
+raw filesystem writes cannot guarantee protection during an active deletion.
+
+| Variable                  | Purpose                                                               |
+| ------------------------- | --------------------------------------------------------------------- |
+| `PHONEHAUL_OFFICIAL=1`    | Stable package identity, requires stable VERSION                      |
+| `PHONEHAUL_DEV_N`         | Local counter or workflow-provided beta N; default 1 for test-only CI |
+| `PHONEHAUL_CHANNEL=local` | Managed local version suffix; not an official release channel         |
+| `PHONEHAUL_VERSION_FILE`  | JS adapter override for validation fixtures                           |
+| `PHONEHAUL_ARTIFACTS_DIR` | Only the repository's canonical local_artifacts root is accepted      |
+| `MSIX_VERSION`            | Explicit platform numeric override; review update history first       |
 
 ## Environment variables
 
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `PHONEHAUL_TRANSFER_PORT` | `57322` | LAN port the receiver binds. `0` = random (used by the desktop sidecar). Must be in `0–65535`. |
-| `PHONEHAUL_NO_BROWSER` | unset | `1` suppresses auto-opening a browser on the LAN UI. Set by the desktop app. |
-| `PHONEHAUL_SETTINGS_FILE` | platform default | Absolute path overriding where the settings file is read/written. |
-| `PHONEHAUL_EXIT_ON_UI_CLOSE` | unset | `1` makes the receiver exit 15 s after the last UI heartbeat (no open UI tab). |
-| `PHONEHAUL_DESKTOP_MANAGED` | unset | `1` (desktop-managed): emit `PHONEHAUL_READY {…}` on stdout and exit on `SIGINT`/`SIGTERM` or stdin EOF instead of auto-browsing. |
-| `PHONEHAUL_HEARTBEAT_TIMEOUT_MS` | `15000` | Desktop-managed mode: exit this many milliseconds after the last `heartbeat` line on stdin. Inert until the first heartbeat arrives. |
-| `PHONEHAUL_SERVER_BIN` | `dist/phonehaul-…` | Debug-only: override which server binary the desktop launches. |
-| `XDG_DOWNLOAD_DIR` | `$XDG_DATA_HOME/phonehaul/downloads` or `~/Downloads` | Linux override for the downloads directory. |
-| `APPIMAGETOOL` | `appimagetool` | Path to `appimagetool` (build-time, AppImage). |
-| `APPIMAGE_RUNTIME` | unset | Path to the AppImage runtime file (build-time, passed to `appimagetool --runtime-file`). |
-| `MSIX_IDENTITY_NAME` / `MSIX_PUBLISHER` | unset | GitHub repo variables for the Windows Store MSIX build. |
+| Variable                                | Default                                               | Effect                                                                                                                               |
+| --------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `PHONEHAUL_TRANSFER_PORT`               | `57322`                                               | LAN port the receiver binds. `0` = random (used by the desktop sidecar). Must be in `0–65535`.                                       |
+| `PHONEHAUL_NO_BROWSER`                  | unset                                                 | `1` suppresses auto-opening a browser on the LAN UI. Set by the desktop app.                                                         |
+| `PHONEHAUL_SETTINGS_FILE`               | platform default                                      | Absolute path overriding where the settings file is read/written.                                                                    |
+| `PHONEHAUL_EXIT_ON_UI_CLOSE`            | unset                                                 | `1` makes the receiver exit 15 s after the last UI heartbeat (no open UI tab).                                                       |
+| `PHONEHAUL_DESKTOP_MANAGED`             | unset                                                 | `1` (desktop-managed): emit `PHONEHAUL_READY {…}` on stdout and exit on `SIGINT`/`SIGTERM` or stdin EOF instead of auto-browsing.    |
+| `PHONEHAUL_HEARTBEAT_TIMEOUT_MS`        | `15000`                                               | Desktop-managed mode: exit this many milliseconds after the last `heartbeat` line on stdin. Inert until the first heartbeat arrives. |
+| `PHONEHAUL_SERVER_BIN`                  | `dist/phonehaul-…`                                    | Debug-only: override which server binary the desktop launches.                                                                       |
+| `XDG_DOWNLOAD_DIR`                      | `$XDG_DATA_HOME/phonehaul/downloads` or `~/Downloads` | Linux override for the downloads directory.                                                                                          |
+| `APPIMAGETOOL`                          | `appimagetool`                                        | Path to `appimagetool` (build-time, AppImage).                                                                                       |
+| `APPIMAGE_RUNTIME`                      | unset                                                 | Path to the AppImage runtime file (build-time, passed to `appimagetool --runtime-file`).                                             |
+| `MSIX_IDENTITY_NAME` / `MSIX_PUBLISHER` | unset                                                 | GitHub repo variables for the Windows Store MSIX build.                                                                              |
 
 The UI (not the server) also accepts these as **query params** on the LAN UI
 root (for the "Open phone UI" / pairing links): `host` (override), `port`
@@ -262,18 +291,18 @@ root (for the "Open phone UI" / pairing links): `host` (override), `port`
 
 The receiver stores a small JSON settings file.
 
-| Field | Type | Default | Notes |
-|-------|------|---------|-------|
-| `destination` | string (abs path) | `<Downloads>/PhoneHaul` | Destination folder for incoming files. Must be an existing directory. |
-| `conflict` | string | `rename` | `rename` \| `skip` \| `replace` — what to do when a file already exists. |
+| Field         | Type              | Default                 | Notes                                                                    |
+| ------------- | ----------------- | ----------------------- | ------------------------------------------------------------------------ |
+| `destination` | string (abs path) | `<Downloads>/PhoneHaul` | Destination folder for incoming files. Must be an existing directory.    |
+| `conflict`    | string            | `rename`                | `rename` \| `skip` \| `replace` — what to do when a file already exists. |
 
 ### Settings file location
 
-| Platform | Path |
-|----------|------|
-| Linux | `${XDG_CONFIG_HOME:-$HOME/.config}/phonehaul/settings.json` |
-| Windows | `%APPDATA%\PhoneHaul\settings.json` |
-| macOS | `~/Library/Application Support/PhoneHaul/settings.json` |
+| Platform | Path                                                        |
+| -------- | ----------------------------------------------------------- |
+| Linux    | `${XDG_CONFIG_HOME:-$HOME/.config}/phonehaul/settings.json` |
+| Windows  | `%APPDATA%\PhoneHaul\settings.json`                         |
+| macOS    | `~/Library/Application Support/PhoneHaul/settings.json`     |
 
 ## App icons
 
@@ -282,13 +311,13 @@ square, transparent corners). The artwork is a gradient-heavy raster, so it is
 **not** vectorizable — the committed platform assets are downscaled rasters
 generated from the master.
 
-| Platform | Assets | Sizes |
-|----------|--------|-------|
-| Tauri (Linux/Windows/macOS) | `desktop/src-tauri/icons/icon.png`, `icon.ico`, `icon.icns`, `16x16.png`–`256x256.png` | 512; ICO 16/32/48/64/128/256; ICNS 16–1024; AppImage hicolor 16/32/48/64/128/256/256@2/512 |
-| Windows Store (MSIX) | `desktop/msix/Assets/{StoreLogo,Square150x150Logo,Square44x44Logo}.png` | 50 / 150 / 44 |
-| Android launcher | `android/app/src/main/res/mipmap-*/ic_launcher.png` + `ic_launcher_foreground.png`, `mipmap-anydpi-v26/ic_launcher.xml` | 48/72/96/144/192; foreground 108dp with the artwork inset to the 72dp safe zone |
-| Linux AppImage | `assets/appicon-128.png` → `usr/share/icons/hicolor/128x128/apps/phonehaul.png` + `.DirIcon` | 128 |
-| In-app UI | `desktop/frontend/public/icon.png` (favicon + header mark), `receiver/src/web/icon.js` (data URI — the receiver has no static-asset route and the SEA bundle has no filesystem assets) | 128 / 64 |
+| Platform                    | Assets                                                                                                                                                                                 | Sizes                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Tauri (Linux/Windows/macOS) | `desktop/src-tauri/icons/icon.png`, `icon.ico`, `icon.icns`, `16x16.png`–`256x256.png`                                                                                                 | 512; ICO 16/32/48/64/128/256; ICNS 16–1024; AppImage hicolor 16/32/48/64/128/256/256@2/512 |
+| Windows Store (MSIX)        | `desktop/msix/Assets/{StoreLogo,Square150x150Logo,Square44x44Logo}.png`                                                                                                                | 50 / 150 / 44                                                                              |
+| Android launcher            | `android/app/src/main/res/mipmap-*/ic_launcher.png` + `ic_launcher_foreground.png`, `mipmap-anydpi-v26/ic_launcher.xml`                                                                | 48/72/96/144/192; foreground 108dp with the artwork inset to the 72dp safe zone            |
+| Linux AppImage              | `assets/appicon-128.png` → `usr/share/icons/hicolor/128x128/apps/phonehaul.png` + `.DirIcon`                                                                                           | 128                                                                                        |
+| In-app UI                   | `desktop/frontend/public/icon.png` (favicon + header mark), `receiver/src/web/icon.js` (data URI — the receiver has no static-asset route and the SEA bundle has no filesystem assets) | 128 / 64                                                                                   |
 
 Regenerate with ImageMagick:
 
@@ -356,11 +385,11 @@ npm run check          # = check:format && lint && check:docs && test && smoke
 
 Per area:
 
-| Area | Commands |
-|------|----------|
-| receiver (JS) | `npm --prefix receiver test` · `npm --prefix receiver smoke:sea` |
-| desktop (Rust) | `cargo fmt --check` · `cargo clippy -- -D warnings` · `cargo test` (run in `desktop/src-tauri`) |
-| android (Kotlin) | `./gradlew :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck` |
+| Area             | Commands                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| receiver (JS)    | `npm --prefix receiver test` · `npm --prefix receiver smoke:sea`                                |
+| desktop (Rust)   | `cargo fmt --check` · `cargo clippy -- -D warnings` · `cargo test` (run in `desktop/src-tauri`) |
+| android (Kotlin) | `./gradlew :app:testDebugUnitTest :app:lintDebug :app:ktlintCheck`                              |
 
 Formatting is automatic (Prettier/`cargo fmt`); run `npm run check` before
 committing. See [AGENTS.md](https://github.com/sg0zzy/phonehaul/blob/main/AGENTS.md) for durable contributor rules.
@@ -385,86 +414,78 @@ branch `main`, folder `/docs`). It publishes to
 
 ## Release workflow
 
-CI workflow **`PhoneHaul builds`** (`.github/workflows/`) runs on push/PR and on
-release tags. Artifacts are available in a workflow run's **Files** tab.
+`PhoneHaul builds` (`receiver-build.yml`) runs on main pushes, PRs targeting main,
+manual CI, and stable tags. Ordinary CI records the exact push or proposed-merge
+SHA and PR head/base, runs JavaScript/Rust/Kotlin checks and packages the declared
+matrix via `platform-builds.yml`. Artifacts are temporary (14 days), with source,
+environment and transport checksums. Ordinary CI never publishes or uses production
+signing secrets.
 
-| Job | Platform | Output | CI artifact |
-|-----|----------|--------|-------------|
-| `android` | Android | debug APK + unit/lint/ktlint | `phonehaul-android-debug` |
-| `sea` | Linux x64 + arm64 | AppImage + SEA executable | `phonehaul-{linux-x64,linux-arm64}` |
-| `desktop` | Linux (AppImage) | Tauri AppImage | `phonehaul-desktop-linux` |
-| `desktop` | Windows (NSIS) | installer `.exe` | `phonehaul-desktop-windows` |
-| `desktop` | macOS x64 + arm64 (DMG) | `.dmg` (unsigned) | `phonehaul-desktop-macos-{x64,arm64}` |
+Stable tags are validated before official compilation. The same pipeline calls
+`Android signed release` for the optional signed target. Mandatory receiver x64
+and arm64, Linux desktop, Windows NSIS, and macOS arm64 results must succeed.
+macOS Intel and configured MSIX are retained as optional targets. Final aggregation
+checks exact source/version, every mandatory package and transport hashes, writes
+`release-manifest.json` and `SHA256SUMS.txt`, and stages a draft. Missing mandatory
+assets block completion. Debug APKs remain test-only Actions artifacts.
 
-Release signing is handled by CI secrets; **keystores are never committed**.
+A separate `release-publication` environment approval must review the draft notes,
+source and artifact manifest. Required-reviewer protection must be configured in
+repository settings; publication fails closed if it is missing. After approval,
+the publisher downloads/verifies remote bytes, rechecks official ordering and the
+stable notes baseline, then makes the draft visible. Existing visible assets are
+never replaced. Repeating identical publication verifies a no-op; changed bytes
+require incident handling or a new version. These workflows have **not been run**
+as part of the local migration.
+
+### Beta releases (manual, all platforms)
+
+`Beta Release` (`beta-release.yml`) is dispatched on trusted main with a `ref`
+(default main). It resolves once to a committed SHA in reviewed main history,
+requires a `X.Y.Z-dev.0` declaration, reserves an annotated `vX.Y.Z-dev.N`, then
+builds that exact SHA through the reusable build/signing workflows. No second tag
+workflow is assumed to start from a GITHUB_TOKEN push. Beta and stable share the
+same lifecycle concurrency group and official history/publication checks.
+
+The aggregate/draft/review process is the same as stable. The final release is a
+prerelease with latest explicitly disabled; it never goes to a store. Failed tags
+remain consumed. A source fix requires a greater version; inspect ambiguous push
+results and existing draft assets before retrying. See
+[VERSIONING.md](https://github.com/sg0zzy/phonehaul/blob/main/VERSIONING.md) for
+preparation, dry-run and recovery commands.
 
 ## Store publishing
 
-Both stores are wired in CI. The build/sign scripts are already in the repo;
-what's left is account registration plus a few GitHub secrets/variables you
-add once. Neither store requires a paid code-signing certificate — Android
-uses a free self-generated keystore, and the Microsoft Store re-signs the
-MSIX with a Microsoft certificate (no cert needed for an MSIX submission).
+Builds, GitHub releases and external submissions are separate operations.
+Google Play stable AAB and Microsoft Store stable MSIX delivery are **manual**;
+beta delivery and other external destinations are disabled. Merely setting a
+credential no longer triggers delivery. Consume verified assets from a completed
+GitHub release; do not compile a different binary for submission.
 
 ### Google Play (Android)
 
-The workflow **`Android signed release`** (`.github/workflows/android-signed-release.yml`)
-runs on `v*` tags (and `workflow_dispatch` — but only on the commit already
-tagged `v<VERSION>`; CI refuses untagged official builds), in the protected
-**`release`** environment, and uploads a signed **APK** and **AAB** as the
-artifact `phonehaul-android-release`. Signing is read from four
-`release`-environment secrets (never committed):
+`Android signed release` is called by beta/stable orchestration (or explicitly on
+a valid annotated tag). It uses the protected `release` environment and existing
+signing material, never a replacement key. It builds APK/AAB and verifies the final
+APK's public certificate against repository/environment variable
+`ANDROID_SIGNER_SHA256` (64 hex digits, no colons). Missing credentials or a signer
+mismatch fail that optional target; there is no debug fallback.
 
-| Secret | What it is |
-|--------|-----------|
-| `ANDROID_KEYSTORE_BASE64` | `base64` of the `.jks` upload keystore |
-| `ANDROID_STORE_PASSWORD` | keystore password |
-| `ANDROID_KEY_ALIAS` | key alias |
-| `ANDROID_KEY_PASSWORD` | key password |
-| `PLAY_SERVICE_ACCOUNT_JSON` | *optional* — service-account key JSON; when set, tag builds auto-upload the AAB to the Play **internal** track |
+| Secret                    | Reference                                   |
+| ------------------------- | ------------------------------------------- |
+| `ANDROID_KEYSTORE_BASE64` | Existing release keystore encoded as base64 |
+| `ANDROID_STORE_PASSWORD`  | Existing store password                     |
+| `ANDROID_KEY_ALIAS`       | Existing signing alias                      |
+| `ANDROID_KEY_PASSWORD`    | Existing key password                       |
 
-Without `PLAY_SERVICE_ACCOUNT_JSON` the workflow only produces the artifact
-(manual upload below). With it, the tag build uploads the AAB to the internal
-track with `changesNotSentForReview=true` — nothing reaches production without
-a human promoting it in Play Console (VERSIONING.md §6.6).
-
-Both `versionName` and `versionCode` are derived from the canonical `VERSION`
-file at the repo root (see [Versioning and builds](#versioning-and-builds));
-official tag builds get `versionName=X.Y.Z` and the stable `versionCode` slot.
-To upload:
-
-1. In Play Console, create the app and **enroll in Play app signing** (Google
-   keeps the production key; you supply an *upload* key).
-2. Generate a free upload keystore (never commit it):
-   ```sh
-   keytool -genkeypair -v -keystore phonehaul-upload.jks -storetype PKCS12 \
-     -alias phonehaul -keyalg RSA -keysize 2048 -validity 10000
-   ```
-   Enter the same value as both the keystore and the key password when
-   prompted. That value is **both** `ANDROID_STORE_PASSWORD` and
-   `ANDROID_KEY_PASSWORD`. **Back up the `.jks` and its passwords offline** —
-   losing them means you can never update the app.
-3. Add the four signing secrets above to the `release` environment
-   (Settings → Environments → `release` → Secrets); `ANDROID_KEYSTORE_BASE64`
-   is the output of `base64 -w0 phonehaul-upload.jks`.
-4. **Optional — automatic Play upload (internal track):**
-   1. The Play Developer API cannot create an app: do the **first** release
-      manually in Play Console (steps 5–6), then CI can push updates.
-   2. In Google Cloud, enable the **Google Play Android Developer API** in a
-      project, create a **service account**, and download its **JSON key**.
-   3. In Play Console → Users and permissions → **Invite new user**, add the
-      service-account email, and grant it at least internal-track release
-      permission (accept the invitation from the key's `client_email`).
-   4. Set the whole JSON as the `release`-environment secret
-      `PLAY_SERVICE_ACCOUNT_JSON`. Tag builds now upload the AAB to the
-      **internal** track automatically; without it they only produce the
-      artifact.
-5. Release and publish: `./scripts/release.sh prepare 0.2.0 && ./scripts/release.sh publish 0.2.0`
-   (creates and pushes the `v0.2.0` tag; see [Versioning and builds](#versioning-and-builds)).
-6. Without `PLAY_SERVICE_ACCOUNT_JSON`: download the `phonehaul-android-release`
-   artifact and upload the **`.aab`** in Play Console (an AAB is required for
-   production; the APK is for internal/managed tracks). With it: the build
-   uploads to the internal track; promote from there manually.
+The credential file is private runner temporary state, removed after signing and
+never uploaded. `PLAY_SERVICE_ACCOUNT_JSON` is no longer read by a build job.
+Use the Play Console to submit the verified AAB manually, recording application
+ID `it.stefanogozzi.phonehaul`, versionCode, artifact hash and submission/processing state.
+Before the next official Android build, reconcile all historical/submitted codes
+and actual GitHub/Play signer certificates as required by the adoption record.
+An AAB's upload key does not establish compatibility with Play-installed APKs.
+Manual Console delivery/acceptance is **unverified in this migration**.
 
 ### Privacy policy and Data safety
 
@@ -499,17 +520,17 @@ certificate is needed.
 Set these GitHub **repository variables** (Settings → Secrets and variables →
 Actions → Variables):
 
-| Variable | Value | Notes |
-|----------|-------|-------|
-| `MSIX_IDENTITY_NAME` | e.g. `youraccount.PhoneHaul` | 3–50 chars, `[A-Za-z0-9.-]`; exact Partner Center package name |
-| `MSIX_PUBLISHER` | e.g. `CN=Your Name, O=Your Name, L=City, S=State, C=US` | full Publisher DN, **exact** match to Partner Center, must start with `CN=` |
-| `MSIX_PUBLISHER_DISPLAY_NAME` | e.g. `Your Name` | optional, shown in the Store |
-| `MSIX_VERSION` | e.g. `1.0.0.0` | optional; default derived from `VERSION` (see [Versioning exceptions](versioning-exceptions.md)) |
+| Variable                      | Value                                                   | Notes                                                                                            |
+| ----------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `MSIX_IDENTITY_NAME`          | e.g. `youraccount.PhoneHaul`                            | 3–50 chars, `[A-Za-z0-9.-]`; exact Partner Center package name                                   |
+| `MSIX_PUBLISHER`              | e.g. `CN=Your Name, O=Your Name, L=City, S=State, C=US` | full Publisher DN, **exact** match to Partner Center, must start with `CN=`                      |
+| `MSIX_PUBLISHER_DISPLAY_NAME` | e.g. `Your Name`                                        | optional, shown in the Store                                                                     |
+| `MSIX_VERSION`                | e.g. `1.0.0.0`                                          | optional; default derived from `VERSION` (see [Versioning exceptions](versioning-exceptions.md)) |
 
 To register and submit:
 
 1. Register as a Microsoft Store developer (Partner Center) — one-time fee.
-2. In Partner Center, **New product → "MSIX or APPX"** (a *packaged* product,
+2. In Partner Center, **New product → "MSIX or APPX"** (a _packaged_ product,
    **not** "EXE or MSI app"). Reserve the app name.
 3. Note the exact **Package identity** and **Publisher** DN from the product's
    identity details, and put them in the variables above.
@@ -518,6 +539,7 @@ To register and submit:
 
 **Two things to expect on this path** (a `runFullTrust` / "packaged classic"
 Win32 app):
+
 - **WebView2.** The manifest's `MinVersion` is `10.0.19041.0` (21H1). The
   Evergreen WebView2 runtime is preinstalled on every Windows 11 device and was
   pushed to eligible Windows 10 devices by Microsoft, so the app finds it on
@@ -529,7 +551,7 @@ Win32 app):
 - **`runFullTrust` review.** Packaging a desktop app as an MSIX marks it
   `runFullTrust`; the Store may ask for a justification and gives it extra
   vetting. If certification rejects it, the documented fallback is to register
-  the product as **"EXE or MSI app"** and upload a *code-signed* NSIS
+  the product as **"EXE or MSI app"** and upload a _code-signed_ NSIS
   installer (offline WebView2) instead — that path needs a paid CA
   code-signing certificate, which is why the free default here is the MSIX.
 

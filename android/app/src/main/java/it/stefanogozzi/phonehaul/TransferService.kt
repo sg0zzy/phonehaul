@@ -1,4 +1,4 @@
-package org.phonehaul.app
+package it.stefanogozzi.phonehaul
 
 import android.app.Notification
 import android.app.NotificationChannel
