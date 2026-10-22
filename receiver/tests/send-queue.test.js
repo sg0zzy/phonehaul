@@ -172,6 +172,31 @@ test('refuses to acknowledge a file whose bytes were not delivered', async () =>
   }
 });
 
+test('acknowledging an immediately completed download cannot race the flush callback', async () => {
+  const queue = new SendQueue();
+  try {
+    const item = await queue.add('photo.jpg', source('alpha'));
+    assert.equal(queue.next().id, item.id);
+    const response = new PassThrough();
+    response.writeHead = () => {};
+    let confirmFlush = null;
+    response.end = (callback) => {
+      confirmFlush = callback;
+    };
+    const streaming = queue.stream(item.id, response);
+    while (!confirmFlush) await new Promise((resolve) => setImmediate(resolve));
+    // The phone received every byte and acknowledged at once while the server
+    // still waits for flush confirmation: the acknowledgement must stick.
+    await queue.finish(item.id, 'completed');
+    assert.equal(item.state, 'completed');
+    assert.equal(queue.active, null);
+    confirmFlush();
+    await streaming;
+  } finally {
+    await queue.close();
+  }
+});
+
 test('refuses to stream an item that is not the active send', async () => {
   const queue = new SendQueue();
   try {

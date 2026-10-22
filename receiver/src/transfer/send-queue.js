@@ -160,6 +160,12 @@ export class SendQueue {
         item.progress += chunk.length;
         this.emit();
       }
+      // Every byte is written and progress equals size. A client can only see
+      // the end of the body after this flush completes, so record the download
+      // here: an immediate /complete acknowledgement must not race the flush
+      // callback below. A teardown before the response actually finished
+      // still fails the item through the close handler above.
+      item.downloaded = true;
       await new Promise((resolve, reject) => {
         const onClose = () => reject(new Error('Download interrupted'));
         response.once('close', onClose);
@@ -168,7 +174,6 @@ export class SendQueue {
           resolve();
         });
       });
-      item.downloaded = true;
       this.activeResponse = null;
     } catch (error) {
       response.destroy(error);
