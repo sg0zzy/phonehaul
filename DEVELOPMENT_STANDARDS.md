@@ -126,6 +126,10 @@ codes automatically.
 | Microsoft Store / Windows / beta                  | disabled                                                                                                                     | no transmission                                                                                      |
 | Website, Apple channels, other destinations / all | disabled                                                                                                                     | no transmission                                                                                      |
 
+Same-machine staging of local build outputs to the build workstation's
+artifact share (`docs/development.md`, AI395 only) is local generation under
+DISTRIBUTION.md, not a distribution destination; the matrix above is unchanged.
+
 The `release` signing environment must restrict refs to reviewed main history
 and release tags. `release-publication` must have required reviewers who inspect
 the staged tag/source, notes, target outcomes and hashes before approval. The

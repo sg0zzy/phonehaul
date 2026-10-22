@@ -7,6 +7,44 @@ PHONEHAUL_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # under this directory; intermediate files stay in tool-specific build dirs.
 : "${PHONEHAUL_ARTIFACTS_DIR:=$PHONEHAUL_ROOT/local_artifacts}"
 
+# --- machine-local artifact share (same-machine staging) ---------------------
+# On the designated build workstation (hostname AI395) every completed managed
+# archive is mirrored to ${PHONEHAUL_ARTIFACT_SHARE:-/srv/artifacts} under
+# phonehaul/<build-id>/. This is local generation on the same machine, not
+# external distribution (DEVELOPMENT_STANDARDS.md distribution matrix). Share
+# copies live outside local_artifacts retention and are never auto-deleted.
+# Publication never overwrites an existing entry, and a share failure only
+# warns: the successful build stands. PHONEHAUL_HOSTNAME is a validation seam
+# that overrides the detected hostname.
+phonehaul_publish_to_share() {
+  local src="$1" host status=0
+  host="${PHONEHAUL_HOSTNAME:-$(uname -n)}"
+  host="${host%%.*}"
+  [[ "$host" == "AI395" ]] || return 0
+  local share="${PHONEHAUL_ARTIFACT_SHARE:-/srv/artifacts}"
+  local root="$share/phonehaul"
+  local id tmp dest
+  id="$(basename -- "$src")"
+  dest="$root/$id"
+  if [[ -e "$dest" ]]; then
+    echo "warning: artifact share already holds $dest; leaving it untouched" >&2
+    return 0
+  fi
+  tmp="$root/.publish-$id-$$"
+  {
+    mkdir -p -- "$root" &&
+      rm -rf -- "$tmp" &&
+      cp -a -- "$src" "$tmp" &&
+      mv -- "$tmp" "$dest"
+  } || status=$?
+  if ((status != 0)); then
+    rm -rf -- "$tmp" 2>/dev/null || true
+    echo "warning: artifact share publication to $share failed; archive remains in local_artifacts" >&2
+    return 0
+  fi
+  echo "Published to artifact share: $dest"
+}
+
 # Never steal an apparently old lock: a long compilation may still own it.
 # Interrupted holders require explicit inspection and lock removal.
 phonehaul_lock() {

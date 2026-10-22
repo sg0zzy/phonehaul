@@ -258,6 +258,14 @@ Use `scripts/cleanup-artifacts.sh --protect BUILD_ID` for race-free protection;
 selection/confirmation. An observed `.keep` of any kind protects a directory;
 raw filesystem writes cannot guarantee protection during an active deletion.
 
+On the build workstation **AI395** a successful managed build additionally
+mirrors its completed archive to the machine-local artifact share
+`/srv/artifacts/phonehaul/<build-id>/`. This same-machine staging is local
+generation, not an external distribution destination, and share copies are
+never touched by retention cleanup. A publication failure only warns; the
+build and its `local_artifacts/` archive remain valid. An existing share
+entry is never overwritten.
+
 | Variable                  | Purpose                                                               |
 | ------------------------- | --------------------------------------------------------------------- |
 | `PHONEHAUL_OFFICIAL=1`    | Stable package identity, requires stable VERSION                      |
@@ -265,6 +273,8 @@ raw filesystem writes cannot guarantee protection during an active deletion.
 | `PHONEHAUL_CHANNEL=local` | Managed local version suffix; not an official release channel         |
 | `PHONEHAUL_VERSION_FILE`  | JS adapter override for validation fixtures                           |
 | `PHONEHAUL_ARTIFACTS_DIR` | Only the repository's canonical local_artifacts root is accepted      |
+| `PHONEHAUL_ARTIFACT_SHARE` | Machine-local share root for AI395 staging; default `/srv/artifacts`          |
+| `PHONEHAUL_HOSTNAME`       | Validation seam overriding the detected hostname for share staging            |
 | `MSIX_VERSION`            | Explicit platform numeric override; review update history first       |
 
 ## Environment variables

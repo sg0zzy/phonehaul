@@ -178,3 +178,6 @@ echo "Archived: $archive_root"
 if ! PHONEHAUL_LOCK_HELD=1 "$PHONEHAUL_ROOT/scripts/cleanup-artifacts.sh"; then
   echo "warning: retention cleanup failed; artifacts were archived, run scripts/cleanup-artifacts.sh manually" >&2
 fi
+
+# Machine-local share staging on the build workstation (warning-only).
+phonehaul_publish_to_share "$archive_root"

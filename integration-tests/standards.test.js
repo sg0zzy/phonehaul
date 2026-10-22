@@ -294,3 +294,42 @@ test('official allocation considers failed remote tags and blocks unrecognized h
   assert.notEqual(run('0.9.6-dev.1').status, 0);
   assert.notEqual(run('0.9.7', { BAD_HISTORY: '1' }).status, 0);
 });
+
+test('share staging is host-gated, atomic, never overwrites and never fails the build', (t) => {
+  const { dir } = fixture(t);
+  const src = path.join(dir, 'src-build');
+  fs.mkdirSync(path.join(src, 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(src, 'app.bin'), 'payload');
+  fs.writeFileSync(path.join(src, 'nested', 'inner.txt'), 'x');
+  const publish = (env) =>
+    spawnSync(
+      'bash',
+      ['-c', 'source scripts/common.sh && phonehaul_publish_to_share "$1"', '_', src],
+      { cwd: dir, encoding: 'utf8', env: { ...process.env, ...env } },
+    );
+  const share = path.join(dir, 'share');
+  const host = { PHONEHAUL_HOSTNAME: 'someworkstation', PHONEHAUL_ARTIFACT_SHARE: share };
+  const off = publish(host);
+  assert.equal(off.status, 0);
+  assert.ok(!fs.existsSync(share), 'a non-publish host must not create the share');
+  // FQDN detection must reduce to the short hostname before matching.
+  const on = publish({ ...host, PHONEHAUL_HOSTNAME: 'AI395.example' });
+  assert.equal(on.status, 0);
+  const dest = path.join(share, 'phonehaul', 'src-build');
+  assert.equal(fs.readFileSync(path.join(dest, 'app.bin'), 'utf8'), 'payload');
+  assert.equal(fs.readFileSync(path.join(dest, 'nested', 'inner.txt'), 'utf8'), 'x');
+  assert.deepEqual(fs.readdirSync(path.join(share, 'phonehaul')), ['src-build']);
+  // A second publication must keep the existing bytes and say so.
+  fs.writeFileSync(path.join(dest, 'app.bin'), 'stale');
+  const again = publish({ ...host, PHONEHAUL_HOSTNAME: 'AI395' });
+  assert.equal(again.status, 0);
+  assert.match(again.stderr, /already holds/);
+  assert.equal(fs.readFileSync(path.join(dest, 'app.bin'), 'utf8'), 'stale');
+  // An unusable share root must warn without failing the invocation.
+  const blocked = path.join(dir, 'blocked');
+  fs.writeFileSync(blocked, 'not a directory');
+  const bad = publish({ PHONEHAUL_HOSTNAME: 'AI395', PHONEHAUL_ARTIFACT_SHARE: blocked });
+  assert.equal(bad.status, 0);
+  assert.match(bad.stderr, /share publication to .* failed/);
+  assert.deepEqual(fs.readdirSync(path.join(share, 'phonehaul')), ['src-build']);
+});
