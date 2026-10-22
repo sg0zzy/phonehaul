@@ -347,9 +347,12 @@ mod tests {
     #[test]
     fn exit_hook_terminates_the_sidecar() {
         // Stand-in for the sidecar: it exits on SIGTERM like managed mode does.
+        // The foreground wait must be interruptible (`wait $!` returns to the
+        // trap handler); a plain `sleep 30` defers the trap until the sleep
+        // exits on POSIX shells, which made the hook look like it waited.
         let child = Command::new("/bin/sh")
             .arg("-c")
-            .arg("trap 'exit 0' TERM; sleep 30")
+            .arg("trap 'exit 0' TERM; while :; do sleep 30 & wait $!; done")
             .spawn()
             .unwrap();
         let pid = child.id();
