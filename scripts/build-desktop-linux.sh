@@ -13,6 +13,10 @@ for tool in node npm cargo rustc pkg-config; do
     exit 1
   fi
 done
+if ! pkg-config --exists dbus-1; then
+  echo "D-Bus development files were not found by pkg-config. On Debian/Ubuntu, install libdbus-1-dev and pkg-config; for a custom installation, set PKG_CONFIG_PATH to the directory containing dbus-1.pc." >&2
+  exit 1
+fi
 if [[ "$(node -p 'process.versions.node.split(".")[0]')" != 24 ]]; then
   echo "Node.js 24 is required to build the Linux receiver sidecar." >&2
   exit 1

@@ -13,16 +13,20 @@
     "smoke:sea": "npm --prefix receiver run smoke:sea",
     "desktop:dev": "npm --prefix desktop run dev",
     "desktop:build": "npm --prefix desktop run build",
-    "format": "prettier --write \"{receiver,desktop,integration-tests,scripts}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
-    "check:format": "prettier --check \"{receiver,desktop,integration-tests,scripts}/**/*.{js,css,json}\" \"protocol/**/*.json\" package.json",
-    "lint": "eslint receiver desktop integration-tests scripts",
+    "format": "prettier --write \"{receiver,desktop,integration-tests,scripts,protocol}/**/*.{js,css,json}\" package.json playwright.config.js",
+    "check:format": "prettier --check \"{receiver,desktop,integration-tests,scripts,protocol}/**/*.{js,css,json}\" package.json playwright.config.js",
+    "lint": "eslint receiver desktop integration-tests scripts protocol playwright.config.js",
     "smoke": "node integration-tests/smoke.js",
     "check:docs": "node integration-tests/check-docs-links.js",
     "check": "npm run check:format && npm run lint && npm run check:docs && npm run test:standards && npm test && npm run smoke",
-    "test:standards": "node --test integration-tests/standards.test.js"
+    "test:standards": "node --test integration-tests/standards.test.js",
+    "internet:dev": "node receiver/src/internet/main.js",
+    "build:internet": "node receiver/scripts/export-internet.js",
+    "test:internet": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.64.1",
     "eslint": "^10.11.0",
     "globals": "^17.13.0",
     "prettier": "^3.9.9"

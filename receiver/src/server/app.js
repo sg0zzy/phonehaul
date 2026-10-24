@@ -9,6 +9,9 @@ import { TransferReceiver, findPartials } from '../transfer/receiver.js';
 import { SendQueue } from '../transfer/send-queue.js';
 import { page } from '../web/page.js';
 import { openDefaultBrowser } from './browser.js';
+import { internetConfig } from '../internet/config.js';
+import { InternetInbox } from '../internet/inbox.js';
+import { serveInternetAsset } from '../internet/signaling.js';
 
 const MAX_JSON = 10 * 1024 * 1024;
 function json(response, status, data) {
@@ -44,6 +47,8 @@ export async function startReceiver({
   phoneStaleMs = 60_000,
 } = {}) {
   let settings = await loadSettings(settingsFile);
+  const internet = internetConfig(process.env);
+  const internetInbox = new InternetInbox(settings, internet.maxFileBytes);
   await mkdir(settings.destination, { recursive: true });
   const certificate = await selfsigned.generate(
     [{ name: 'commonName', value: 'PhoneHaul Receiver' }],
@@ -251,6 +256,38 @@ export async function startReceiver({
         return json(response, 403, { error: 'Invalid management origin' });
       }
       const url = new URL(request.url, 'http://localhost');
+      if (url.pathname === '/internet/config' && request.method === 'GET')
+        return json(response, 200, {
+          ...internet,
+          mode: 'receiver',
+          signalingUrl: process.env.PHONEHAUL_SIGNAL_URL ?? '',
+        });
+      if (
+        url.pathname.startsWith('/internet/') &&
+        request.method === 'GET' &&
+        (await serveInternetAsset(url.pathname, response))
+      )
+        return;
+      if (url.pathname === '/api/internet/open' && request.method === 'POST') {
+        openDefaultBrowser(new URL('/internet/', uiUrl).href);
+        return json(response, 200, { status: 'opened' });
+      }
+      if (url.pathname === '/api/internet/inbox' && request.method === 'POST')
+        return json(response, 201, await internetInbox.begin(await body(request)));
+      const internetMatch = /^\/api\/internet\/inbox\/([a-f0-9-]{36})\/(write|finish|abort)$/.exec(
+        url.pathname,
+      );
+      if (internetMatch && request.method === 'POST') {
+        const [, id, action] = internetMatch;
+        const data = await body(request);
+        internetInbox.get(id);
+        if (action === 'write')
+          return json(response, 200, await internetInbox.write(id, data.bytes));
+        if (action === 'finish')
+          return json(response, 200, await internetInbox.finish(id, data.sha256));
+        await internetInbox.abort();
+        return json(response, 200, { status: 'cancelled' });
+      }
       if (url.pathname === '/' && request.method === 'GET') {
         response.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
@@ -309,13 +346,18 @@ export async function startReceiver({
         return json(response, 200, { status: 'ready' });
       }
       if (url.pathname === '/api/settings' && request.method === 'POST') {
+        if (internetInbox.active || internetInbox.starting)
+          throw Error('Cannot change destination during Internet transfer');
         if (transfer.transfer && !transfer.transfer.finished)
           throw Error('Cannot change destination during transfer');
         settings = await saveSettings(await body(request), settingsFile);
         transfer.settings = settings;
+        internetInbox.receiver.settings = settings;
         return json(response, 200, settings);
       }
       if (url.pathname === '/api/partials/remove' && request.method === 'POST') {
+        if (internetInbox.active || internetInbox.starting)
+          throw Error('Cannot remove partial files during Internet transfer');
         if (transfer.transfer && !transfer.transfer.finished)
           throw Error('Cannot remove partial files during transfer');
         const partials = await findPartials(settings.destination);
@@ -349,6 +391,7 @@ export async function startReceiver({
   const close = async () => {
     if (closed) return;
     closed = true;
+    await internetInbox.close();
     if (heartbeatMonitor) clearInterval(heartbeatMonitor);
     clearInterval(pairingTimer);
     clearInterval(connectionTimer);

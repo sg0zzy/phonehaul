@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { copyFile, chmod, mkdtemp, readFile, rename, rm, writeFile, mkdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
+import { internetAssetsPlugin } from './internet-assets.js';
 import { seaExecutableName } from '../../scripts/shared/platform.js';
 
 const require = createRequire(import.meta.url);
@@ -29,6 +30,7 @@ try {
     entryPoints: [path.join(receiverDir, 'src', 'server', 'main.js')],
     outfile: bundlePath,
     bundle: true,
+    plugins: [internetAssetsPlugin],
     platform: 'node',
     format: 'cjs',
     target: `node${nodeMajor}`,

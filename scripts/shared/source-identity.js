@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const sourceScope =
-  'git tracked + nonignored untracked + android/local.properties + configured AppImage tool hashes and MSIX options; excludes credentials, outputs, caches; symlinks rejected';
+  'git tracked + nonignored untracked + android/local.properties + configured AppImage tool hashes, MSIX and Internet client options; excludes credentials, outputs, caches; symlinks rejected';
 export function sourceIdentity() {
   const files = new Set(
     execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
@@ -54,6 +54,12 @@ export function sourceIdentity() {
     'MSIX_IDENTITY_NAME',
     'MSIX_PUBLISHER',
     'APPIMAGE_EXTRACT_AND_RUN',
+    'PHONEHAUL_INTERNET_MAX_FILE_BYTES',
+    'PHONEHAUL_INVITATION_MS',
+    'PHONEHAUL_RECOVERY_MS',
+    'PHONEHAUL_MAX_ROOMS',
+    'PHONEHAUL_REQUESTS_PER_MINUTE',
+    'PHONEHAUL_SIGNAL_URL',
   ])
     hash.update(`${key}\0${process.env[key] ?? ''}\0`);
   for (const key of ['APPIMAGETOOL', 'APPIMAGE_RUNTIME']) {

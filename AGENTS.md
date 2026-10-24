@@ -25,7 +25,7 @@ npm run check          # = check:format && lint && check:docs && test:standards 
 ```
 
 - **format** — Prettier auto-fixes; `npm run format` applies it. Do not hand-format.
-- **lint** — ESLint over `receiver/`, `desktop/`, `integration-tests/`, `scripts/`.
+- **lint** — ESLint over `receiver/`, `desktop/`, `integration-tests/`, `scripts/`, `protocol/`.
 - **test** — receiver unit tests.
 - **smoke** — `integration-tests/smoke.js` end-to-end.
 - **check:docs** — `integration-tests/check-docs-links.js` validates the

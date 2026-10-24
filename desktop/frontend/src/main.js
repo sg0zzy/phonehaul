@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 
 const $ = (id) => document.getElementById(id);
+$('internet').onclick = () => invoke('open_internet').catch((error) => message(String(error)));
 const message = (text) => {
   $('message').textContent = text || '';
 };
@@ -58,6 +59,7 @@ function updateServerChip(server) {
 }
 
 function update(data) {
+  $('internet').disabled = !data.server?.running;
   updateServerChip(data.server);
   if (data.server) {
     $('address').querySelector('.address-text').textContent = data.server.running

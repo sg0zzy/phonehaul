@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
 import { build } from 'esbuild';
+import { internetAssetsPlugin } from './internet-assets.js';
 
 const receiverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rootDir = path.dirname(receiverDir);
@@ -12,6 +13,7 @@ await build({
   entryPoints: [path.join(receiverDir, 'src', 'server', 'main.js')],
   outfile,
   bundle: true,
+  plugins: [internetAssetsPlugin],
   platform: 'node',
   format: 'cjs',
   target: 'node22',

@@ -2,7 +2,7 @@
 
 `receiver/src/server` owns the local HTTP UI and LAN HTTPS API. `receiver/src/transfer`
 validates manifests and streams files to the configured destination.
-`receiver/src/security` owns pairing and path checks. `receiver/src/settings`
+`receiver/src/security` owns pairing and filesystem path checks. `receiver/src/settings`
 persists only destination and conflict policy. `receiver/src/web` is the browser
 UI; it never receives file bytes.
 
@@ -12,7 +12,13 @@ QR, `Selection` and `MediaRepository` enumerate sources, `ReceiverClient` pins t
 TLS certificate and streams files, and `PhoneHaulViewModel` manages the transfer
 states. The fake sender in `integration-tests` exercises the wire protocol without
 an Android device. `protocol/` holds the versioned manifest schema and test
-vector.
+vector, plus dependency-free JavaScript modules for relative-path validation
+(`relative-path.js`) and manifest validation/normalization (`manifest-v1.js`).
+The receiver retains its existing validation entry points: `security/paths.js`
+re-exports the portable path validator, and `transfer/manifest.js` adds a
+Node-generated transfer ID to the normalized manifest. Filesystem checks and
+commit operations remain in the receiver; the portable validators impose no
+transport-specific file-size limit.
 
 The receiver's web UI is generated from `receiver/src/web/page.js` and served
 only on loopback; no external static files are required.
@@ -70,6 +76,18 @@ server while connected, and `PhoneInbox` validates paths and writes all files
 directly to public Downloads through MediaStore. The Tauri desktop feeds the
 same queue (via its pickers/drops) without changing dispatch logic.
 
+## Optional Internet transport
+
+The development Internet implementation lives in `receiver/src/internet`.
+Its signaling service is independent of LAN pairing and starts only when
+explicitly invoked. The shared browser client uses WebRTC; the desktop bridges
+native writes through its existing loopback sidecar, and Android packages the
+client in `InternetActivity` with a MediaStore sink. Internet transfers currently
+use COPY only and a separate configurable size limit. Existing LAN protocol,
+pairing timers, and MOVE behavior remain unchanged. See
+[Internet transfers](internet.md) for setup, authentication, limits, platform
+decisions, and verification gaps. No public infrastructure was deployed.
+
 ## Standards rationale and data recovery
 
 The pinned architecture policy is mapped in
@@ -78,7 +96,7 @@ Tauri 2/Rust and Kotlin/Compose already fit the central preferences. The existin
 Node sidecar and small plain JavaScript UI remain: the shared tested transfer
 engine and native UI do not benefit from a framework rewrite. LAN HTTPS with QR
 pairing needs no cloud account, signaling service, RxDB or WebRTC migration.
-Transfer/pairing work without internet; the published privacy-policy page needs
+LAN transfer/pairing work without internet; the published privacy-policy page needs
 internet access. Privacy, scoped permissions and the loopback guard are preserved.
 
 Received content remains ordinary files under the configured destination

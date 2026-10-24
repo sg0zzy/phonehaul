@@ -1,5 +1,9 @@
 # Transfer protocol v1
 
+This page describes the existing LAN HTTPS protocol. The separate development
+[Internet transport](internet.md) uses WebRTC and does not change these endpoints
+or LAN pairing rules.
+
 The QR encodes
 `phonehaul://pair?v=1&h=<private IPv4>&p=<HTTPS port>&s=<base64url 256-bit token>&f=<lowercase SHA-256 certificate fingerprint>`.
 The certificate is generated each receiver launch. A sender must reject nonlocal

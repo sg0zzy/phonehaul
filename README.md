@@ -1,7 +1,10 @@
 # PhoneHaul
 
 Move files between an Android phone and a computer over your local network.
-No cloud, no server to run beyond the receiver itself, and no account.
+LAN transfers need no cloud service or account.
+
+Optional Internet transfers are under development on this branch and require a
+configured HTTPS signaling service. See [Internet setup and limitations](docs/internet.md).
 
 ## Download PhoneHaul Android
 

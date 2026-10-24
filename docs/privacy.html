@@ -34,7 +34,7 @@
       <p class="meta">
         PhoneHaul Android app (<code>it.stefanogozzi.phonehaul</code>) ·
         Developer: <strong>sg0zzy</strong> ·
-        Effective date: <strong>2026-10-08</strong>
+        Development revision: <strong>2026-10-24</strong> (not yet published)
       </p>
 
       <div class="placeholder">
@@ -45,23 +45,20 @@
       <h2>Summary</h2>
       <ul>
         <li>PhoneHaul moves files you select from your phone to a computer you pair with, over your
-          local network only. It has no accounts, no cloud service, and no Internet relay.</li>
+          local network. Optional development Internet mode connects approved peers over WebRTC, with signaling, STUN, and optional TURN. No account is required.</li>
         <li>The app does <strong>not</strong> read data silently: it only processes the files you pick,
           plus the metadata needed to transfer and verify them.</li>
-        <li>Nothing is sent to any server or third party. The only network destination is the paired
-          computer's private LAN address.</li>
+        <li>LAN mode sends data only to the paired private address. Internet mode shares connection metadata with the configured signaling/STUN services and may send encrypted file traffic through TURN; the services do not store transferred files.</li>
         <li>The app stores no user data on the phone beyond one app preference. It contains no
           analytics, advertising, or crash-reporting code.</li>
-        <li>Transfers are encrypted in transit with TLS and a certificate fingerprint pinned from the
-          QR code; cleartext traffic is disabled.</li>
+        <li>LAN transfers use TLS with the QR certificate fingerprint pinned. Internet transfers use DTLS and require independent comparison and approval of the verification phrase; cleartext traffic is disabled in the Android app.</li>
       </ul>
 
       <h2>1. Data the app reads and transmits</h2>
       <p>
         Google Play defines "collect" as transmitting data from an app off the user's device. PhoneHaul
-        transmits the data below from the phone to the computer you pair with, so these data types are
-        treated as collected — even though the recipient is a device you control and no third party is
-        involved.
+        transmits selected file data to the peer you approve, so these data types are
+        listed below. Internet connection metadata is described in section 3; external service operators may have their own retention policies.
       </p>
       <table>
         <thead>
@@ -77,7 +74,7 @@
             <td>File contents (bytes)</td>
             <td>Files you select with the picker, the folder picker, or the photos/videos browser</td>
             <td>The transfer itself</td>
-            <td>Paired computer, over the local network</td>
+            <td>Approved peer, over LAN or Internet</td>
           </tr>
           <tr>
             <td>Display name and relative path</td>
@@ -145,7 +142,7 @@
         <tbody>
           <tr>
             <td><code>INTERNET</code></td>
-            <td>Communicating with the paired receiver on the local network.</td>
+            <td>Communicating with the LAN receiver or the configured Internet signaling, STUN, TURN, and approved peer endpoints.</td>
           </tr>
           <tr>
             <td><code>CAMERA</code></td>
@@ -173,22 +170,25 @@
 
       <h2>3. Who receives your data</h2>
       <p>
-        The only recipient is the computer you pair with, running the PhoneHaul receiver or desktop app.
-        The app connects to no other host: the pairing address must be a private IPv4 LAN address, and
-        there is no code path that contacts any third-party server, store, or analytics endpoint.
-        No data is shared with, sold to, or transferred to any third party.
+        LAN mode sends files to the paired private-address receiver. Optional Internet mode sends
+        files to the independently verified peer. The signaling service receives room identifiers,
+        ephemeral certificate fingerprints, connection descriptions/candidates, addresses, and activity
+        needed to connect peers. STUN observes address-discovery requests; TURN relays encrypted
+        traffic and observes addresses, timing, and volume. File names and unencrypted file contents
+        are exchanged over the peer connection, not the signaling API. No server-side file storage
+        or storage fallback is implemented. Service operators may keep access logs according to their
+        policies. No public signaling or relay service has been deployed by this development change.
       </p>
 
       <h2>4. How data is handled and protected</h2>
       <ul>
-        <li><strong>Encryption in transit.</strong> All transfer traffic uses HTTPS. The receiver's
+        <li><strong>Encryption in transit.</strong> LAN transfer traffic uses HTTPS. The receiver's
           certificate is self-signed and ephemeral, so the app pins its SHA-256 fingerprint from the QR
           code and refuses any connection whose certificate does not match. Cleartext traffic is
           disabled in the app configuration.</li>
         <li><strong>Restricted destination.</strong> The app rejects pairing codes that point to
-          non-private or link-local addresses.</li>
-        <li><strong>Short-lived credentials.</strong> The pairing token is random, expires after five
-          minutes, and is never written to disk on the phone.</li>
+          public addresses in the LAN QR flow. Internet mode uses the configured HTTPS service and WebRTC peers instead.</li>
+        <li><strong>Short-lived credentials.</strong> An unused LAN pairing token expires after five minutes. Internet invitations default to 15 minutes, with a separate 10-minute disconnected recovery window; established sessions are independent of invitation expiry. Credentials are kept in memory.</li>
         <li><strong>No logging.</strong> The app writes no logs of file names, paths, tokens, or
           transfer contents. The receiver prints activity to its own local console and does not log
           session tokens, keys, or certificate material.</li>
@@ -197,6 +197,12 @@
         <li><strong>No backup.</strong> The app is excluded from Android backup
           (<code>allowBackup="false"</code>).</li>
       </ul>
+
+      <p>Internet verification compares all 24 words binding the room and both DTLS certificate
+        fingerprints. The signaling service cannot silently substitute a peer if the trusted clients
+        and users complete this independent comparison correctly. A host able to replace the browser
+        client code remains trusted. Internet mode currently supports COPY only and never deletes
+        original files. Keep its screen open; background continuation is not promised.</p>
 
       <h2>5. Retention</h2>
       <table>
@@ -215,8 +221,8 @@
           </tr>
           <tr>
             <td>Phone — memory</td>
-            <td>Selection lists, media listings, pairing data, transfer state.</td>
-            <td>Until you disconnect or close the app. Nothing is cached to disk.</td>
+            <td>Selection lists, media listings, pairing data, transfer state, and Internet room credentials.</td>
+            <td>Until you disconnect or close the app. The WebView may keep ordinary browser cache/state; session credentials are not explicitly persisted.</td>
           </tr>
           <tr>
             <td>Phone — your files</td>
@@ -253,17 +259,22 @@
         you can see and delete yourself.
       </p>
 
+      <p>Internet signaling retains bounded room/message state in memory until expiry or service
+        restart. Relay grants may remain valid until credential expiry. Operators must document their
+        own access-log retention before public use. Received Internet files remain in Downloads until
+        you delete them; handled failures remove pending native writes.</p>
+
       <h2>7. Third-party dependencies</h2>
       <p>
         The app uses only open-source libraries for its user interface, camera, QR decoding, and file
         access: Jetpack Compose, androidx activity, lifecycle, <code>documentfile</code>, CameraX, ZXing,
-        and JUnit for tests. None of them collect data, perform analytics, show advertising, report
+        and JUnit for tests. Internet mode also packages QRCode, @noble/hashes for incremental SHA-256, and @scure/bip39 for verification-word encoding. The platform WebView performs the explicitly requested Internet connections. These libraries do not add analytics or accounts. The existing LAN libraries do not collect data, perform analytics, show advertising, report
         crashes, or open network connections. There is no analytics, telemetry, advertising, or
         crash-reporting SDK in the app.
       </p>
 
       <h2>8. Data safety summary</h2>
-      <p>This table must match the Data safety section in the Google Play listing.</p>
+      <p>This existing table describes LAN mode. Before distributing Internet-enabled builds, the owner must review the new network-metadata flows, service policies, and Google Play Data safety disclosures together. No store update or policy publication was performed.</p>
       <table>
         <thead>
           <tr>
@@ -306,7 +317,7 @@
         </tbody>
       </table>
       <p>
-        Data is encrypted in transit (TLS with a pinned certificate fingerprint). Deletion is available
+        Data is encrypted in transit (LAN TLS with a pinned fingerprint, or Internet DTLS with independently verified endpoints). Deletion is available
         through the mechanisms in section 6.
       </p>
 

@@ -461,6 +461,19 @@ async fn refresh_qr(service: State<'_, Shared>) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
+async fn open_internet(service: State<'_, Shared>) -> Result<(), String> {
+    let root = service.lock().root.clone();
+    request_json(
+        http_client(),
+        &root,
+        reqwest::Method::POST,
+        "/api/internet/open",
+        None,
+    )
+    .await?;
+    Ok(())
+}
+#[tauri::command]
 async fn set_destination(app: tauri::AppHandle, service: State<'_, Shared>) -> Result<(), String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog().file().pick_folder(move |selection| {
@@ -721,6 +734,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_status,
             refresh_qr,
+            open_internet,
             set_destination,
             send_files,
             queue_dropped_paths

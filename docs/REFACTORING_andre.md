@@ -1,5 +1,21 @@
 PhoneHaul review: findings and phased fix plan
 
+## Internet development progress (2026-10-24)
+
+- [x] Extract portable validators while preserving LAN entry points and behavior.
+- [x] Add bounded temporary-room signaling, configurable Internet limits/timers, authenticated room access, rate limits, and expiring TURN credentials/admission.
+- [x] Add independent full-fingerprint phrase comparison, explicit peer/file approval, bidirectional COPY, bounded DataChannel flow control, and verified streaming downloads.
+- [x] Add native desktop writes through the existing receiver/sidecar and a system-browser entry point; preserve the loopback guard and existing LAN MOVE.
+- [x] Package the shared client in a restricted Android WebView with a MediaStore sink, file picker, and Internet invitation QR routing. Debug APK, unit tests, lint, and ktlint pass; physical-device transfers remain unverified.
+- [x] Verify Chromium and Firefox streaming downloads, mixed-browser transfer, pinned-identity reconnection, native destination commit, and local forced coturn relay. Both browsers completed a 1 GiB hash-verified copy on Linux.
+- [ ] Qualify Android device/WebView transfers and native Windows/macOS integration.
+- [ ] Inventory the actual VPS plan, bandwidth/ports and hostname; review production TLS, proxy and coturn quotas, privacy disclosures, and authorized hosting scope.
+- [ ] Verify genuine cross-network/NAT traversal and TURN/TLS on the intended infrastructure. No public deployment, release, commit or push was performed.
+
+Implementation, configuration, trust boundaries and test limitations are in
+[Internet transfers](internet.md). Existing standards/release gaps below remain
+unresolved; local checks do not establish production readiness.
+
 ## Implementation progress (2026-10-02)
 
 This section is the restart point. Check an item only after the change and its relevant verification are complete. The review and proposed plan below remain as the original source of suggestions; its proposed approval and commit process does not itself describe work already done.
@@ -31,6 +47,7 @@ This section is the restart point. Check an item only after the change and its r
   - [x] Collapse pairing to two states — connected or not connected — with the QR shown whenever not connected. `PairingSession.connected` was sticky because Android's Done button never notifies the receiver, so `pairingComplete` stayed true forever. A paired phone that declared `send-to-phone` and stays quiet for 15 s (`phoneOfflineWindowMs`) now ends the session, fails the active send item with `Phone disconnected`, and generates a new QR. `pairingComplete` is removed; both UIs read `connected`. Regression test in `receiver/tests/api.test.js`.
   - [x] Stop the desktop sidecar when supervisor heartbeats stop arriving, so a desktop app killed without running its exit hook does not leave the receiver running. The Rust backend writes a `heartbeat` line to the sidecar's stdin every 5 s; managed mode exits 15 s after the last one (`PHONEHAUL_HEARTBEAT_TIMEOUT_MS`), armed on the first heartbeat. Regression tests in `receiver/tests/managed.test.js` (SIGTERM, stdin EOF, heartbeat timeout) and `desktop/src-tauri/src/main.rs` (`exit_hook_terminates_the_sidecar`, `heartbeat_loop_writes_periodically_and_stops_with_the_sidecar`).
 - [x] Phase 4 — Refactoring.
+  - [x] Extract portable relative-path and manifest validation into `protocol/`, preserving receiver imports and Node-owned transfer IDs (2026-10-24). Existing behavioral tests exercise the extracted validators; the full npm gate passes with 92 receiver tests, 10 standards tests, and LAN smoke. Internet transport behavior remains unimplemented; this extraction preserves LAN behavior.
   - [x] Simplify Android ViewModel state and extract transfer runner and shared helpers. Gradle gate green (2026-10-04); `TransferRunner.kt`, `Hashing.kt`, `Names.kt` extracted and in use; dead code (`SourceKind`, `MediaEntry.isScreenshot`, `clearError`) removed; delete decision driven by `TransferState.canDeleteSource`.
   - [x] Consolidate the ViewModel's screen-level fields into one immutable `UiState` data class; `MainActivity` reads them via `model.uiState`. Verified: `:app:assembleDebug` green (fresh `compileDebugKotlin`), `:app:test` 14/14 pass (0 failures/errors/skipped), fidelity diff vs the git original confirms no logic dropped, and single-writer threading analysis confirms no lost byte-callback updates.
   - [x] Split receiver route handlers and reuse `uiState()`.

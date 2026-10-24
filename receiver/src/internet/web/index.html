@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PhoneHaul Internet</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #172b2a; background: #f4f7f4; }
+    body { max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+    section { background: white; border: 1px solid #dce6e0; border-radius: 16px; padding: 1.2rem; margin: 1rem 0; }
+    button, input { font: inherit; padding: .7rem; border: 1px solid #bacac2; border-radius: 8px; margin: .3rem 0; max-width: 100%; box-sizing: border-box; }
+    input[type=url], input[type=text] { width: 100%; }
+    button { background: #08765f; color: white; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    label { display: block; margin: .5rem 0; }
+    #phrase { font-size: 1.15rem; line-height: 1.8; padding: 1rem; background: #f4f7f4; }
+    #error { color: #a32520; } #share { overflow-wrap: anywhere; } #qr { width: 220px; height: 220px; }
+    #drop { border: 2px dashed #bacac2; padding: 1rem; } progress { width: 100%; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>PhoneHaul Internet</h1>
+  <p>Send files in either direction. Keep this page open. COPY only; originals stay on the sending device.</p>
+  <p>Internet mode shares connection metadata with your signaling and STUN services. TURN may relay encrypted file traffic. Service operators can see addresses, timing, and traffic volume; files are not stored on the server.</p>
+  <p id="status" role="status">Loading…</p><p id="error" role="alert"></p>
+  <section id="setup">
+    <label>Signaling service HTTPS address<input id="service" type="url" placeholder="https://signal.example.org"></label>
+    <button id="create">Create temporary session</button>
+    <label>Session code or invitation link<input id="code" type="text" autocomplete="off"></label>
+    <button id="join">Join session</button>
+    <label><input id="relay" type="checkbox"> Use relay only (connectivity test)</label>
+  </section>
+  <section id="invitation" hidden>
+    <h2>Invitation</h2><p>Code: <strong id="session-code"></strong></p>
+    <a id="share" rel="noreferrer"></a><p><img id="qr" alt="Session invitation QR"></p>
+    <p id="expires"></p>
+  </section>
+  <section id="verification" hidden>
+    <h2>Verify the other device</h2>
+    <p>Compare <strong>all 24 words, in order</strong> with the other person in person or over a trusted call. A matching session code alone is insufficient.</p>
+    <p id="phrase"></p><button id="approve">All words match — approve peer</button>
+    <button id="reject">Reject peer</button>
+  </section>
+  <section id="files" hidden>
+    <h2>Files</h2><p id="limit"></p><p id="destination"></p>
+    <div id="drop"><label>Select or drop files<input id="picker" type="file" multiple></label></div>
+    <p id="progress-text"></p><progress id="progress" max="1" value="0"></progress>
+    <button id="cancel">Cancel transfer</button>
+  </section>
+  <section id="incoming" hidden>
+    <p id="incoming-text"></p><button id="accept">Receive copy</button><button id="decline">Decline</button>
+  </section>
+  <button id="retry" hidden>Reconnect session (interrupted files restart)</button>
+  <button id="leave" hidden>End session</button>
+  <script src="/internet/client.js" type="module"></script>
+</body></html>

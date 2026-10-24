@@ -19,7 +19,7 @@ Central policy is pinned in [DEVELOPMENT_STANDARDS.md](https://github.com/sg0zzy
 │   └── src-tauri/       # Rust backend + bundled phonehaul-server
 ├── android/             # Android app (Kotlin, Compose, Gradle)
 ├── integration-tests/   # smoke / end-to-end tests
-├── protocol/            # protocol.json (schema for the LAN protocol)
+├── protocol/            # portable JS validators, versioned manifest schema and test vectors
 ├── assets/              # App icon master + AppImage icon asset
 └── .github/workflows/   # CI builds
 ```
@@ -136,6 +136,12 @@ Run either:
 
 ## Building the Android app
 
+Install receiver npm dependencies with `npm ci --prefix receiver` first. Android
+builds use Node 24 to package the shared Internet client into local app assets;
+`PHONEHAUL_NODE` can select an absolute Node executable path. See
+[Internet development and configuration](internet.md) for the separate signaling
+service, browser tests, relay settings, and current validation limits.
+
 ```sh
 # debug APK
 cd android
@@ -157,7 +163,7 @@ installs receiver and desktop npm dependencies and builds the desktop AppImage
 with its bundled receiver sidecar:
 
 ```sh
-sudo apt-get install --yes build-essential curl wget file libssl-dev libxdo-dev \
+sudo apt-get install --yes build-essential curl wget file pkg-config libdbus-1-dev libssl-dev libxdo-dev \
   libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
   libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libldap2-dev libfuse2 patchelf
 
@@ -166,6 +172,12 @@ bash scripts/build-desktop-linux.sh
 ```
 
 `scripts/build-appimage.sh` builds the standalone receiver AppImage instead.
+
+If `libdbus-sys` fails because `dbus-1.pc` cannot be found, install
+`libdbus-1-dev` and `pkg-config` on the build machine, then verify
+`pkg-config --modversion dbus-1` succeeds before retrying the build. For a
+custom D-Bus installation, add the directory containing `dbus-1.pc` to
+`PKG_CONFIG_PATH`; standard system packages normally need no override.
 
 ### Windows (Tauri, Git Bash)
 

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, lstat, mkdir, readdir, symlink, writeFile, rm } from 'node:fs/promises';
-import { relativePath, safeDirectory } from '../src/security/paths.js';
+import { relativePath } from '../../protocol/relative-path.js';
+import { safeDirectory } from '../src/security/paths.js';
 
 test('rejects control characters in relative path segments', () => {
   for (const value of ['a/\x07b', 'a/b\x1f', 'a/\x7f', 'a\x00b', 'a/\x0b/b'])

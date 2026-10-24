@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 // --- canonical version adapter (VERSIONING.md) -------------------------
@@ -147,3 +148,43 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     testImplementation("junit:junit:4.13.2")
 }
+
+// Package the same trusted client used by browsers, without a second native
+// WebRTC stack. Generated assets remain under the ignored Android build tree.
+val internetAssets = layout.buildDirectory.dir("generated/internetAssets")
+val buildInternetAssets by tasks.registering(Exec::class) {
+    workingDir(rootProject.projectDir.parentFile)
+    val nodeName = if (System.getProperty("os.name").startsWith("Windows")) "node.exe" else "node"
+    val nodeExecutable =
+        System.getenv("PHONEHAUL_NODE")
+            ?: System
+                .getenv("PATH")
+                .split(File.pathSeparator)
+                .map { File(it, nodeName) }
+                .firstOrNull { it.isFile && it.canExecute() }
+                ?.absolutePath
+            ?: error("Node.js 24 is required to package Internet client assets. Set PHONEHAUL_NODE to its absolute path.")
+    commandLine(nodeExecutable, "receiver/scripts/export-internet.js", internetAssets.get().asFile.absolutePath)
+    inputs.files(fileTree("../../receiver/src/internet"), fileTree("../../protocol"))
+    inputs.files(
+        "../../receiver/scripts/internet-assets.js",
+        "../../receiver/scripts/export-internet.js",
+        "../../receiver/package-lock.json",
+    )
+    for (key in listOf(
+        "PHONEHAUL_INTERNET_MAX_FILE_BYTES",
+        "PHONEHAUL_INVITATION_MS",
+        "PHONEHAUL_RECOVERY_MS",
+        "PHONEHAUL_MAX_ROOMS",
+        "PHONEHAUL_REQUESTS_PER_MINUTE",
+        "PHONEHAUL_SIGNAL_URL",
+    )) {
+        inputs.property(key, System.getenv(key) ?: "")
+    }
+    outputs.dir(internetAssets)
+}
+android.sourceSets
+    .getByName("main")
+    .assets
+    .srcDir(internetAssets)
+tasks.named("preBuild") { dependsOn(buildInternetAssets) }

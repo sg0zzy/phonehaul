@@ -194,6 +194,7 @@ private fun App(
     selectFolder: () -> Unit,
     startTransfer: (TransferMode) -> Unit,
 ) {
+    val context = LocalContext.current
     Scaffold(topBar = {
         TopAppBar(title = { Text("PhoneHaul") }, navigationIcon = {
             if (vm.uiState.screen != Screen.START &&
@@ -211,8 +212,11 @@ private fun App(
             when (vm.uiState.screen) {
                 Screen.START -> {
                     Heading("Move files from your phone to your computer.")
-                    Text("PhoneHaul works only when your phone and computer are connected to the same local network.")
+                    Text("Use the computer QR for local network transfers, or open Internet transfers to connect across networks.")
                     Button(onClick = requestScan, modifier = Modifier.fillMaxWidth()) { Text("Scan PC QR") }
+                    OutlinedButton(onClick = {
+                        context.startActivity(Intent(context, InternetActivity::class.java))
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Internet transfers") }
                     if (cameraDenied) {
                         Text(
                             "Camera permission is needed to scan the QR code. You can allow it in Android settings.",
@@ -231,8 +235,16 @@ private fun App(
                     TextButton(onClick = vm::back) { Text("Not now") }
                 }
                 Screen.SCAN -> {
-                    Heading("Scan the computer QR")
-                    QrScanner(onFound = vm::connect, onError = { vm.showError(it) })
+                    Heading("Scan a LAN or Internet invitation QR")
+                    QrScanner(onFound = { raw ->
+                        val invitation = Uri.parse(raw)
+                        if (invitation.scheme == "https" && invitation.path == "/internet/") {
+                            vm.back()
+                            context.startActivity(Intent(context, InternetActivity::class.java).putExtra("invitation", raw))
+                        } else {
+                            vm.connect(raw)
+                        }
+                    }, onError = { vm.showError(it) })
                     if (vm.uiState.busy) Text(vm.uiState.status)
                 }
                 Screen.SELECT -> {
