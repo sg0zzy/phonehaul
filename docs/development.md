@@ -327,7 +327,7 @@ generated from the master.
 | Windows Store (MSIX)        | `desktop/msix/Assets/{StoreLogo,Square150x150Logo,Square44x44Logo}.png`                                                                                                                | 50 / 150 / 44                                                                              |
 | Android launcher            | `android/app/src/main/res/mipmap-*/ic_launcher.png` + `ic_launcher_foreground.png`, `mipmap-anydpi-v26/ic_launcher.xml`                                                                | 48/72/96/144/192; foreground 108dp with the artwork inset to the 72dp safe zone            |
 | Linux AppImage              | `assets/appicon-128.png` → `usr/share/icons/hicolor/128x128/apps/phonehaul.png` + `.DirIcon`                                                                                           | 128                                                                                        |
-| In-app UI                   | `desktop/frontend/public/icon.png` (favicon + header mark), `receiver/src/web/icon.js` (data URI — the receiver has no static-asset route and the SEA bundle has no filesystem assets) | 128 / 64                                                                                   |
+| In-app UI                   | `desktop/frontend/public/icon.png` (favicon + header mark), `receiver/src/web/icon.js` (data URI — the receiver has no static-asset route and the SEA bundle has no filesystem assets) | 128 / 128                                                                                   |
 
 Regenerate with ImageMagick:
 
@@ -345,8 +345,8 @@ for s in 16 32 48 64 128 256; do
 done
 magick assets/icon.png -resize 256x256 'desktop/src-tauri/icons/128x128@2x.png'
 magick assets/icon.png -resize 128x128 desktop/frontend/public/icon.png
-magick assets/icon.png -resize 64x64 /tmp/i64.png
-printf "export const icon =\\n  'data:image/png;base64,%s';\\n" "$(base64 -w0 /tmp/i64.png)" > receiver/src/web/icon.js
+magick assets/icon.png -resize 128x128 /tmp/i128.png
+printf "export const icon =\\n  'data:image/png;base64,%s';\\n" "$(base64 -w0 /tmp/i128.png)" > receiver/src/web/icon.js
 
 for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
   n=${d%%:*}; s=${d##*:}
