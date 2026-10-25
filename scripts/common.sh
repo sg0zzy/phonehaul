@@ -178,30 +178,38 @@ phonehaul_build_android() {
 
 phonehaul_prepare_appimage_tools() {
   [[ "$(uname -s)" == Linux ]] || phonehaul_die "AppImage builds must run on Linux."
-  if [[ -z "${APPIMAGETOOL:-}" && -x "$HOME/opt/appimagetool" ]]; then
-    export APPIMAGETOOL="$HOME/opt/appimagetool"
-  fi
-  if [[ -z "${APPIMAGETOOL:-}" ]]; then
-    phonehaul_die "appimagetool not found. Install it or set APPIMAGETOOL to its executable path."
-  fi
-  if [[ "$APPIMAGETOOL" == */* ]]; then
-    [[ -x "$APPIMAGETOOL" ]] || phonehaul_die "APPIMAGETOOL is not executable: $APPIMAGETOOL"
-  else
-    command -v "$APPIMAGETOOL" >/dev/null 2>&1 || phonehaul_die "appimagetool is not available on PATH."
-  fi
-
   local runtime_arch
   case "$(uname -m)" in
     x86_64|amd64) runtime_arch=x86_64 ;;
     aarch64|arm64) runtime_arch=aarch64 ;;
     *) phonehaul_die "Unsupported AppImage host architecture: $(uname -m)" ;;
   esac
+  if [[ -z "${APPIMAGETOOL:-}" && -x "$HOME/opt/appimagetool" ]]; then
+    export APPIMAGETOOL="$HOME/opt/appimagetool"
+  fi
+  if [[ -z "${APPIMAGETOOL:-}" ]]; then
+    phonehaul_die "appimagetool was not found (probed: \$APPIMAGETOOL, ~/opt/appimagetool, PATH).
+  Set APPIMAGETOOL to the executable or install it there; see
+  docs/development.md → 'Linux AppImage — build-time tooling' for the pinned download."
+  fi
+  if [[ "$APPIMAGETOOL" == */* ]]; then
+    [[ -x "$APPIMAGETOOL" ]] ||
+      phonehaul_die "APPIMAGETOOL is set but not executable: $APPIMAGETOOL"
+  else
+    command -v "$APPIMAGETOOL" >/dev/null 2>&1 ||
+      phonehaul_die "APPIMAGETOOL=$APPIMAGETOOL is not available on PATH. Set it to an executable path instead."
+  fi
   if [[ -z "${APPIMAGE_RUNTIME:-}" && -f "$HOME/opt/runtime-$runtime_arch" ]]; then
     export APPIMAGE_RUNTIME="$HOME/opt/runtime-$runtime_arch"
   fi
-  if [[ -z "${APPIMAGE_RUNTIME:-}" || ! -f "$APPIMAGE_RUNTIME" ]]; then
-    phonehaul_die "AppImage runtime not found. Set APPIMAGE_RUNTIME to runtime-$runtime_arch."
+  if [[ -z "${APPIMAGE_RUNTIME:-}" ]]; then
+    phonehaul_die "The AppImage type2 runtime for $runtime_arch was not found (probed: \$APPIMAGE_RUNTIME, ~/opt/runtime-$runtime_arch).
+  Neither tool is downloaded for you: set APPIMAGE_RUNTIME to the runtime file
+  or place it at ~/opt/runtime-$runtime_arch; see docs/development.md →
+  'Linux AppImage — build-time tooling' for the pinned download."
   fi
+  [[ -f "$APPIMAGE_RUNTIME" ]] ||
+    phonehaul_die "APPIMAGE_RUNTIME is set to a file that does not exist: $APPIMAGE_RUNTIME"
 }
 
 phonehaul_build_appimage() {

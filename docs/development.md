@@ -100,22 +100,40 @@ npm run package:sea --prefix receiver          # SEA executable -> dist/phonehau
 npm run package:appimage --prefix receiver     # Linux AppImage (+ SEA executable)
 ```
 
-### Linux AppImage — runtime requirement
+### Linux AppImage — build-time tooling
 
-The AppImage **runtime is not auto-downloaded at runtime**. It must be
-present at **build time** and passed to `appimagetool` via `--runtime-file`.
-`appimagetool` must be on `PATH`.
+Both tools are **build-time only** and are never downloaded at run time. The
+build needs `appimagetool` plus the **type2 runtime file** it embeds via
+`--runtime-file`. CI pins both by version and verifies their SHA-256
+(`platform-builds.yml`); the same pinned files work locally:
+
+| Tool                     | Pinned version | Download (`{arch}` = `x86_64` / `aarch64`)                                                              |
+| ------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
+| `appimagetool`           | `1.9.1`        | `https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-{arch}.AppImage`        |
+| type2 runtime            | `20251108`     | `https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-{arch}`                 |
+
+Make them available in one of two ways:
+
+1. **Environment variables** (what CI does): `APPIMAGETOOL` = executable path,
+   `APPIMAGE_RUNTIME` = runtime file path.
+2. **Fixed locations**, picked up automatically when the variables are unset:
+   `~/opt/appimagetool` (executable) and `~/opt/runtime-{arch}`. An
+   `appimagetool` already on `PATH` is used as is.
 
 ```sh
-# 1. appimagetool + runtime must be available (one-off)
-#    appimagetool:  https://github.com/AppImage/type2-runtime
-#    runtime:       https://github.com/AppImage/type2-runtime/releases (runtime-{arch})
+# one-off: fetch the pinned files into the automatic locations
+mkdir -p ~/opt
+curl -fL https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -o ~/opt/appimagetool
+curl -fL https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 -o ~/opt/runtime-x86_64
+chmod +x ~/opt/appimagetool
 
-# 2. build
-APPIMAGETOOL=appimagetool APPIMAGE_RUNTIME=./runtime-x86_64 \
-  npm run package:appimage --prefix receiver
+# build (managed invocation recommended: it retains the archived output)
+scripts/build.sh dev appimage
 chmod +x dist/PhoneHaul-*.AppImage
 ```
+
+A missing tool stops the build with a message naming the variable and the
+location that were probed; nothing is downloaded for you.
 
 Outputs:
 
@@ -289,8 +307,8 @@ entry is never overwritten.
 | `PHONEHAUL_HEARTBEAT_TIMEOUT_MS`        | `15000`                                               | Desktop-managed mode: exit this many milliseconds after the last `heartbeat` line on stdin. Inert until the first heartbeat arrives. |
 | `PHONEHAUL_SERVER_BIN`                  | `dist/phonehaul-…`                                    | Debug-only: override which server binary the desktop launches.                                                                       |
 | `XDG_DOWNLOAD_DIR`                      | `$XDG_DATA_HOME/phonehaul/downloads` or `~/Downloads` | Linux override for the downloads directory.                                                                                          |
-| `APPIMAGETOOL`                          | `appimagetool`                                        | Path to `appimagetool` (build-time, AppImage).                                                                                       |
-| `APPIMAGE_RUNTIME`                      | unset                                                 | Path to the AppImage runtime file (build-time, passed to `appimagetool --runtime-file`).                                             |
+| `APPIMAGETOOL`                          | `appimagetool`                                        | `appimagetool` executable (build-time). When unset: `~/opt/appimagetool`, then `PATH`.                                               |
+| `APPIMAGE_RUNTIME`                      | unset                                                 | AppImage type2 runtime file (build-time, passed as `--runtime-file`). When unset: `~/opt/runtime-{arch}`.                            |
 | `MSIX_IDENTITY_NAME` / `MSIX_PUBLISHER` | unset                                                 | GitHub repo variables for the Windows Store MSIX build.                                                                              |
 
 The UI (not the server) also accepts these as **query params** on the LAN UI
