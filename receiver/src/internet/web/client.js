@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { DIRECT_UNAVAILABLE, checkIcePolicy, selectedTransport } from '../connectivity.js';
 import { certificateFingerprint, verificationPhrase } from '../identity.js';
 import { InternetTransfer } from '../transfer.js';
 import { downloadSink, prepareDownloads } from './download.js';
@@ -26,6 +27,13 @@ let remoteHello,
   recoveryDeadline = 0,
   offerDecision;
 let attempt = 0;
+let connectionTimer,
+  diagnosticsTimer,
+  connectionStarted,
+  setupSeconds,
+  connectivityMode,
+  negotiating = false,
+  starting = false;
 
 function serviceUrl(raw) {
   const url = new URL(raw);
@@ -60,8 +68,20 @@ async function request(path, { method = 'GET', body, authenticated = true } = {}
   return data;
 }
 const signal = (body) => request(`/v1/rooms/${session.id}/signal`, { method: 'POST', body });
-function updateReady() {
+async function updateReady() {
   if (!transfer) return;
+  const active = pc;
+  if (localApproved && remoteApproved && remoteHello) {
+    try {
+      await diagnostics(active);
+    } catch (e) {
+      error(e);
+      active.close();
+      interrupted();
+      return;
+    }
+    if (pc !== active || active.connectionState === 'closed') return;
+  }
   transfer.approved = Boolean(localApproved && remoteApproved && remoteHello);
   $('files').hidden = !transfer.approved;
   if (transfer.approved) {
@@ -159,6 +179,8 @@ function attach(dc) {
     onState: fileState,
   });
   channel.onopen = () => {
+    clearTimeout(connectionTimer);
+    setupSeconds = Math.round((Date.now() - connectionStarted) / 1000);
     try {
       const local = certificateFingerprint(pc.localDescription.sdp);
       const remote = certificateFingerprint(pc.remoteDescription.sdp);
@@ -203,7 +225,7 @@ function attach(dc) {
           remoteHello = m;
           transfer.maxFileBytes = Math.min(transfer.maxFileBytes, m.maxFileBytes);
           $('limit').textContent =
-            `Internet limit: ${transfer.maxFileBytes} bytes per file, direct or relayed.`;
+            `Internet limit: ${transfer.maxFileBytes} bytes per file, COPY only.`;
           updateReady();
           return;
         }
@@ -221,14 +243,22 @@ function attach(dc) {
     }
   };
   channel.onclose = interrupted;
-  channel.onerror = () =>
-    error(
-      Error(
-        'Peer connection failed. Relay capacity may be unavailable. No file was uploaded to the service.',
-      ),
-    );
+  channel.onerror = () => error(Error(DIRECT_UNAVAILABLE));
+}
+async function diagnostics(connection) {
+  const selected = selectedTransport(await connection.getStats(), connectivityMode);
+  if (pc !== connection) return;
+  $('diagnostics').textContent =
+    `ICE: ${connection.iceConnectionState}; ${selected ? `${selected.protocol} ${selected.local} ↔ ${selected.remote}` : 'candidate pair not reported'}; setup ${setupSeconds ?? Math.round((Date.now() - connectionStarted) / 1000)}s`;
+  return selected;
 }
 async function makeConnection() {
+  clearTimeout(connectionTimer);
+  clearInterval(diagnosticsTimer);
+  await transfer?.abort();
+  if (transfer) transfer.approved = false;
+  $('files').hidden = true;
+  status('Establishing peer connection…');
   if (recoveryDeadline && Date.now() > recoveryDeadline)
     throw Error('Recovery window expired. Create a new session.');
   const previous = pc;
@@ -244,6 +274,8 @@ async function makeConnection() {
   remoteApproved = false;
   remoteHello = null;
   const ice = await request(`/v1/rooms/${session.id}/ice`);
+  connectivityMode = ice.connectivityMode;
+  checkIcePolicy(connectivityMode, ice.iceServers);
   if ($('relay').checked && !ice.relayAvailable)
     throw Error(
       'TURN relay capacity is unavailable or exhausted. Retry later, or try a direct connection.',
@@ -257,15 +289,28 @@ async function makeConnection() {
     iceServers: ice.iceServers,
     iceTransportPolicy: $('relay').checked ? 'relay' : 'all',
   });
+  const connection = pc;
+  connectionStarted = Date.now();
+  setupSeconds = null;
+  connectionTimer = setTimeout(() => {
+    if (pc === connection && channel?.readyState !== 'open') {
+      connection.close();
+      interrupted();
+      error(Error(DIRECT_UNAVAILABLE));
+    }
+  }, 60_000);
+  diagnosticsTimer = setInterval(() => {
+    if (pc === connection && connection.connectionState === 'connected')
+      diagnostics(connection).catch((e) => {
+        error(e);
+        connection.close();
+        interrupted();
+      });
+  }, 2000);
   pc.ondatachannel = (event) => attach(event.channel);
   pc.onconnectionstatechange = () => {
     if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) interrupted();
-    if (pc.connectionState === 'failed')
-      error(
-        Error(
-          'Could not connect across these networks. TURN may be unavailable or full. Retry later.',
-        ),
-      );
+    if (pc.connectionState === 'failed') error(Error(DIRECT_UNAVAILABLE));
   };
 }
 async function gathered(description) {
@@ -275,7 +320,7 @@ async function gathered(description) {
     if (connection.iceGatheringState === 'complete') return resolve();
     const timer = setTimeout(() => {
       connection.removeEventListener('icegatheringstatechange', check);
-      reject(Error('Connectivity setup timed out. Check the STUN/TURN configuration.'));
+      reject(Error(DIRECT_UNAVAILABLE));
     }, 25_000);
     function check() {
       if (connection.iceGatheringState === 'complete') {
@@ -286,12 +331,19 @@ async function gathered(description) {
     }
     connection.addEventListener('icegatheringstatechange', check);
   });
+  checkIcePolicy(connectivityMode, [], connection.localDescription.sdp);
   return connection.localDescription.sdp;
 }
 async function offer() {
-  await makeConnection();
-  attach(pc.createDataChannel('phonehaul-v1', { ordered: true }));
-  await signal({ type: 'offer', sdp: await gathered(await pc.createOffer()) });
+  if (negotiating) return;
+  negotiating = true;
+  try {
+    await makeConnection();
+    attach(pc.createDataChannel('phonehaul-v1', { ordered: true }));
+    await signal({ type: 'offer', sdp: await gathered(await pc.createOffer()) });
+  } finally {
+    negotiating = false;
+  }
 }
 async function poll() {
   if (polling) return;
@@ -303,15 +355,19 @@ async function poll() {
         const { events } = await request(
           `/v1/rooms/${session.id}/events?connected=${transfer?.approved && channel?.readyState === 'open' ? 1 : 0}`,
         );
+        if (!session || run !== attempt) break;
         for (const m of events) {
           if (m.type === 'joined' && session.role === 'owner') await offer();
           else if (m.type === 'offer' && session.role === 'guest') {
             await makeConnection();
+            checkIcePolicy(connectivityMode, [], m.sdp);
             await pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
             await signal({ type: 'answer', sdp: await gathered(await pc.createAnswer()) });
           } else if (m.type === 'answer' && session.role === 'owner') {
+            if (!pc || pc.signalingState === 'closed') continue;
             if (pc.signalingState !== 'have-local-offer')
               throw Error('Unexpected signaling answer');
+            checkIcePolicy(connectivityMode, [], m.sdp);
             await pc.setRemoteDescription({ type: 'answer', sdp: m.sdp });
           } else if (m.type === 'restart' && session.role === 'owner') await offer();
           else if (['reject', 'close'].includes(m.type))
@@ -334,9 +390,21 @@ async function poll() {
     }
   } finally {
     polling = false;
+    if (session && run !== attempt) void poll();
   }
 }
 async function begin(join) {
+  if (starting) return;
+  starting = true;
+  $('create').disabled = $('join').disabled = true;
+  try {
+    await beginSession(join);
+  } finally {
+    starting = false;
+    $('create').disabled = $('join').disabled = false;
+  }
+}
+async function beginSession(join) {
   $('error').textContent = '';
   if (session) throw Error('End the current session first.');
   if (!window.isSecureContext || !window.RTCPeerConnection)
@@ -351,12 +419,15 @@ async function begin(join) {
       throw Error('Invitation service does not match the selected service.');
     code = params.get('room') ?? '';
   }
+  status('Connecting to signaling…');
   const result = await request(join ? '/v1/join' : '/v1/rooms', {
     method: 'POST',
     body: join ? { code } : {},
     authenticated: false,
   });
   session = { ...result, service };
+  $('relay-option').hidden = result.config.connectivityMode !== 'turn-enabled';
+  if (result.config.connectivityMode !== 'turn-enabled') $('relay').checked = false;
   pinnedIdentity = null;
   recoveryDeadline = 0;
   attempt++;
@@ -379,6 +450,8 @@ async function begin(join) {
   void poll();
 }
 async function leave(notify = true) {
+  clearTimeout(connectionTimer);
+  clearInterval(diagnosticsTimer);
   if (notify && session)
     await request(`/v1/rooms/${session.id}`, { method: 'DELETE' }).catch(() => {});
   session = null;
@@ -465,6 +538,7 @@ async function init() {
     config.mode === 'browser'
       ? 'Receives use your browser download settings. Completion means verified download handoff; it does not authorize deleting originals.'
       : 'Receives are verified and committed to this device’s Downloads destination.';
+  $('relay-option').hidden = config.connectivityMode !== 'turn-enabled';
   status('Ready. Create a session or enter an invitation.');
 }
 init().catch(error);

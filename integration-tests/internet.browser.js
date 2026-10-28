@@ -4,6 +4,7 @@ import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+import { internetConfig } from '../receiver/src/internet/config.js';
 import { startSignaling } from '../receiver/src/internet/signaling.js';
 import { startReceiver } from '../receiver/src/server/app.js';
 
@@ -21,6 +22,11 @@ test.beforeAll(async () => {
   });
   app = await startSignaling({
     port: 0,
+    config: internetConfig({
+      PHONEHAUL_CONNECTIVITY_MODE: process.env.PHONEHAUL_TEST_TURN_URL
+        ? 'turn-enabled'
+        : 'stun-only',
+    }),
     allowedOrigins: [new URL(native.uiUrl).origin],
     turn: {
       urls: process.env.PHONEHAUL_TEST_TURN_URL ? [process.env.PHONEHAUL_TEST_TURN_URL] : [],
@@ -95,6 +101,13 @@ async function pair(
   await guest.locator('#approve').click();
   await expect(owner.locator('#files')).toBeVisible();
   await expect(guest.locator('#files')).toBeVisible();
+  if (!relay) {
+    for (const page of [owner, guest]) {
+      await expect(page.locator('#diagnostics')).toContainText(/host|srflx|prflx/);
+      await expect(page.locator('#diagnostics')).not.toContainText('relay');
+      await expect(page.locator('#relay-option')).toBeHidden();
+    }
+  }
   return {
     owner,
     guest,
@@ -299,5 +312,68 @@ test('large browser transfer streams without whole-file buffering', async ({
     clearInterval(sampler);
     await cdp?.detach();
     await peers.close();
+  }
+});
+
+test('signaling outage leaves an approved direct DataChannel usable', async ({ browser }) => {
+  const peers = await pair(browser);
+  try {
+    for (const page of [peers.owner, peers.guest])
+      await page.route('**/v1/**', (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: '{"error":"Test outage"}',
+        }),
+      );
+    await expect(peers.owner.locator('#error')).toContainText('Test outage');
+    await peers.owner.locator('#picker').setInputFiles({
+      name: 'outage.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('still direct'),
+    });
+    await expect(peers.guest.locator('#incoming')).toBeVisible();
+    const downloaded = peers.guest.waitForEvent('download');
+    await peers.guest.locator('#accept').click();
+    expect(await readFile(await (await downloaded).path(), 'utf8')).toBe('still direct');
+  } finally {
+    await peers.close();
+  }
+});
+
+test('a peer without connectivity reaches a bounded direct failure without relay fallback', async ({
+  browser,
+}) => {
+  const context = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const owner = await context.newPage(),
+    guest = await guestContext.newPage();
+  try {
+    await owner.addInitScript(() => {
+      const schedule = window.setTimeout.bind(window);
+      window.setTimeout = (fn, ms, ...args) => schedule(fn, ms === 60_000 ? 3000 : ms, ...args);
+      const Original = window.RTCPeerConnection;
+      window.RTCPeerConnection = class extends Original {
+        constructor(config) {
+          super({ ...config, iceTransportPolicy: 'relay', iceServers: [] });
+          window.__connectionCreated = true;
+        }
+      };
+    });
+    await owner.goto(`${app.url}/internet/`);
+    await owner.locator('#create').click();
+    await expect(owner.locator('#session-code')).not.toBeEmpty();
+    await guest.goto(`${app.url}/internet/`);
+    await guest.locator('#code').fill(await owner.locator('#session-code').textContent());
+    await guest.locator('#join').click();
+    await expect(owner.locator('#status')).toContainText('Establishing', { timeout: 15_000 });
+    // Exercise the connection deadline with a shortened timer and no usable candidates.
+    await expect.poll(() => owner.evaluate(() => window.__connectionCreated)).toBe(true);
+    await expect(owner.locator('#error')).toContainText('Direct connection unavailable');
+    await expect(owner.locator('#files')).toBeHidden();
+    await expect(owner.locator('#relay-option')).toBeHidden();
+  } finally {
+    await context.close();
+    await guestContext.close();
   }
 });

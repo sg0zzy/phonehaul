@@ -18,9 +18,10 @@ export class Rooms {
       const lastSeen = Math.min(...peers.map((p) => p.lastSeen));
       const expired = !room.established && this.now() >= room.invitationExpires;
       // A polling gap is disconnection. An invitation timer never ends an
-      // established session; only the separate recovery deadline does.
+      // established session; recovery and the absolute lifetime bound it instead.
       if (
         expired ||
+        this.now() >= room.expires ||
         this.now() - lastSeen > this.config.recoveryMs + 30_000 ||
         (room.disconnectedAt != null && this.now() - room.disconnectedAt >= this.config.recoveryMs)
       ) {
@@ -43,6 +44,7 @@ export class Rooms {
       id,
       code,
       invitationExpires: this.now() + this.config.invitationMs,
+      expires: this.now() + this.config.maxSessionMs,
       established: false,
       peers: { owner: this.peer(token) },
     };

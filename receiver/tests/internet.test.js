@@ -253,6 +253,7 @@ test('relay admission respects configured capacity and retains already-issued gr
   const app = await startSignaling({
     port: 0,
     now: () => now,
+    config: internetConfig({ PHONEHAUL_CONNECTIVITY_MODE: 'turn-enabled' }),
     turn: {
       urls: ['turn:relay.example:3478'],
       secret: 'test-only-secret',
@@ -279,5 +280,94 @@ test('relay admission respects configured capacity and retains already-issued gr
     assert.equal((await ice(b)).relayAvailable, true);
   } finally {
     await app.close();
+  }
+});
+
+test('STUN-only refuses TURN configuration and non-STUN URL injection', async () => {
+  await assert.rejects(
+    startSignaling({ port: 0, turn: { urls: ['turn:example.org'] } }),
+    /forbidden/,
+  );
+  await assert.rejects(startSignaling({ port: 0, stunUrls: ['turn:example.org'] }), /stun:/);
+  const app = await startSignaling({ port: 0, stunUrls: ['stun:example.org:3478'] });
+  try {
+    const room = await fetch(`${app.url}/v1/rooms`, { method: 'POST' }).then((r) => r.json());
+    const ice = await fetch(`${app.url}/v1/rooms/${room.id}/ice`, {
+      headers: { Authorization: `Bearer ${room.token}` },
+    }).then((r) => r.json());
+    assert.equal(ice.connectivityMode, 'stun-only');
+    assert.equal(ice.relayAvailable, false);
+    assert.deepEqual(ice.iceServers, [{ urls: ['stun:example.org:3478'] }]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('proxy rate limits isolate client IPs only with explicit trust', async () => {
+  for (const trustedProxy of [false, true]) {
+    const app = await startSignaling({
+      port: 0,
+      config: {
+        ...internetConfig(),
+        trustedProxy,
+        requestsPerMinute: 1,
+      },
+    });
+    try {
+      const create = (ip) =>
+        fetch(`${app.url}/v1/rooms`, {
+          method: 'POST',
+          headers: { 'X-Real-IP': ip },
+        });
+      assert.equal((await create('192.0.2.1')).status, 201);
+      assert.equal((await create('192.0.2.2')).status, trustedProxy ? 201 : 429);
+      assert.equal((await create('192.0.2.1')).status, 429);
+      if (trustedProxy) assert.equal((await create('invalid')).status, 400);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+test('rooms bound absolute lifetime, isolate sessions, and reject invitation reuse', () => {
+  let now = 0;
+  const rooms = new Rooms({ ...internetConfig(), maxSessionMs: 100 }, { now: () => now });
+  const owner = rooms.create(),
+    other = rooms.create(),
+    guest = rooms.join(owner.id);
+  assert.throws(() => rooms.signal(other.id, guest.token, { type: 'restart' }), /Invalid session/);
+  rooms.poll(owner.id, owner.token);
+  rooms.signal(owner.id, owner.token, { type: 'offer', sdp: 'v=0' });
+  assert.deepEqual(rooms.poll(owner.id, guest.token), [{ type: 'offer', sdp: 'v=0' }]);
+  assert.deepEqual(rooms.poll(other.id, other.token), []);
+  rooms.approve(owner.id, owner.token);
+  rooms.approve(owner.id, guest.token);
+  assert.throws(() => rooms.join(owner.id), /unavailable/);
+  now = 100;
+  assert.throws(() => rooms.authenticate(owner.id, owner.token), /expired/);
+  assert.throws(() => rooms.join(owner.code), /unavailable/);
+});
+
+test('direct policy rejects relay SDP, ICE URL injection and either selected relay endpoint', async () => {
+  const { checkIcePolicy, selectedTransport } = await import('../src/internet/connectivity.js');
+  assert.throws(() => checkIcePolicy('stun-only', [{ urls: ['turn:x'] }]), /violation/);
+  assert.throws(
+    () => checkIcePolicy('stun-only', [], 'a=candidate:1 1 UDP 1 192.0.2.1 123 typ relay\r\n'),
+    /forbidden/,
+  );
+  for (const type of ['host', 'srflx', 'prflx', 'relay']) {
+    const stats = new Map([
+      ['t', { type: 'transport', selectedCandidatePairId: 'p' }],
+      ['p', { localCandidateId: 'l', remoteCandidateId: 'r' }],
+      ['l', { candidateType: 'host', protocol: 'udp' }],
+      ['r', { candidateType: type }],
+    ]);
+    if (type === 'relay') assert.throws(() => selectedTransport(stats, 'stun-only'), /violation/);
+    else assert.equal(selectedTransport(stats, 'stun-only').remote, type);
+    assert.equal(selectedTransport(stats, 'turn-enabled').remote, type);
+    stats.get('l').candidateType = type;
+    stats.get('r').candidateType = 'host';
+    if (type === 'relay') assert.throws(() => selectedTransport(stats, 'stun-only'), /violation/);
+    else assert.equal(selectedTransport(stats, 'stun-only').local, type);
   }
 });

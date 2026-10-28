@@ -1,5 +1,16 @@
 PhoneHaul review: findings and phased fix plan
 
+## STUN-only readiness audit (2026-10-27)
+
+- [x] Add explicit STUN-only policy, relay rejection, selected-pair diagnostics and bounded connection setup.
+- [x] Isolate trusted-proxy rate budgets and bound absolute room lifetime.
+- [x] Prepare an independent deployment runbook and manual network matrix.
+- [x] Inspect VPS ports/TLS/proxy workflow; deploy isolated signaling and STUN-only after explicit owner request. Public TLS/API/STUN, renewal and Pboard regression pass; sustained capacity remains unverified.
+- [ ] Verify Android device and genuine cross-network direct transfers.
+
+Evidence and remaining gaps: [readiness audit](internet-readiness.md),
+[deployment runbook](internet-deployment.md). Earlier results below are historical claims.
+
 ## Internet development progress (2026-10-24)
 
 - [x] Extract portable validators while preserving LAN entry points and behavior.

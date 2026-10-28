@@ -6,7 +6,13 @@ export function internetConfig(env = {}) {
     if (!Number.isSafeInteger(n) || n <= 0 || n > max) throw Error(`Invalid ${name}`);
     return n;
   };
+  const connectivityMode = env.PHONEHAUL_CONNECTIVITY_MODE ?? 'stun-only';
+  if (!['stun-only', 'turn-enabled'].includes(connectivityMode))
+    throw Error('Invalid PHONEHAUL_CONNECTIVITY_MODE');
   return {
+    connectivityMode,
+    trustedProxy: env.PHONEHAUL_TRUST_LOOPBACK_PROXY === '1',
+    maxSessionMs: positive('PHONEHAUL_MAX_SESSION_MS', 24 * 60 * 60_000),
     maxFileBytes: positive(
       'PHONEHAUL_INTERNET_MAX_FILE_BYTES',
       INTERNET_FILE_LIMIT,

@@ -34,7 +34,7 @@
       <p class="meta">
         PhoneHaul Android app (<code>it.stefanogozzi.phonehaul</code>) ·
         Developer: <strong>sg0zzy</strong> ·
-        Development revision: <strong>2026-10-24</strong> (not yet published)
+        Development revision: <strong>2026-10-27</strong> (not yet published)
       </p>
 
       <div class="placeholder">
@@ -177,7 +177,7 @@
         traffic and observes addresses, timing, and volume. File names and unencrypted file contents
         are exchanged over the peer connection, not the signaling API. No server-side file storage
         or storage fallback is implemented. Service operators may keep access logs according to their
-        policies. No public signaling or relay service has been deployed by this development change.
+        policies. An experimental signaling and STUN-only discovery service is deployed at phonehaul.cecosl.ovh. It provides no TURN relay. Its separate operational logs are bounded to seven days with disk caps; physical Android interoperability remains under verification.
       </p>
 
       <h2>4. How data is handled and protected</h2>

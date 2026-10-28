@@ -22,6 +22,7 @@
     "test:standards": "node --test integration-tests/standards.test.js",
     "internet:dev": "node receiver/src/internet/main.js",
     "build:internet": "node receiver/scripts/export-internet.js",
+    "build:signaling": "node receiver/scripts/build-signaling.js",
     "test:internet": "playwright test"
   },
   "devDependencies": {

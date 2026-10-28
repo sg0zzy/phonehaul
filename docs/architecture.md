@@ -86,7 +86,9 @@ client in `InternetActivity` with a MediaStore sink. Internet transfers currentl
 use COPY only and a separate configurable size limit. Existing LAN protocol,
 pairing timers, and MOVE behavior remain unchanged. See
 [Internet transfers](internet.md) for setup, authentication, limits, platform
-decisions, and verification gaps. No public infrastructure was deployed.
+decisions, and verification gaps. The owner authorized the isolated OVH
+[signaling and STUN-only deployment](internet-deployment.md) on 2026-10-27;
+Android and genuine two-network traversal remain unverified.
 
 ## Standards rationale and data recovery
 

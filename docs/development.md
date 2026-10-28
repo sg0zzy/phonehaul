@@ -140,7 +140,11 @@ Install receiver npm dependencies with `npm ci --prefix receiver` first. Android
 builds use Node 24 to package the shared Internet client into local app assets;
 `PHONEHAUL_NODE` can select an absolute Node executable path. See
 [Internet development and configuration](internet.md) for the separate signaling
-service, browser tests, relay settings, and current validation limits.
+service, browser tests, relay settings, and current validation limits. The
+[OVH deployment record](internet-deployment.md) documents the active STUN-only
+service. `npm run build:signaling` builds its self-contained Node bundle locally;
+`node integration-tests/internet-public.js` explicitly tests the live service
+with two browsers on this workstation (not real two-network traversal).
 
 ```sh
 # debug APK

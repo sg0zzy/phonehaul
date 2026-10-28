@@ -21,14 +21,14 @@
 <body>
   <h1>PhoneHaul Internet</h1>
   <p>Send files in either direction. Keep this page open. COPY only; originals stay on the sending device.</p>
-  <p>Internet mode shares connection metadata with your signaling and STUN services. TURN may relay encrypted file traffic. Service operators can see addresses, timing, and traffic volume; files are not stored on the server.</p>
-  <p id="status" role="status">Loading…</p><p id="error" role="alert"></p>
+  <p>Internet mode shares connection metadata with your signaling and STUN services. Direct mode sends file contents only to the peer. Service operators see connection metadata. Relay tests require a separately enabled service policy.</p>
+  <p id="diagnostics"></p><p id="status" role="status">Loading…</p><p id="error" role="alert"></p>
   <section id="setup">
     <label>Signaling service HTTPS address<input id="service" type="url" placeholder="https://signal.example.org"></label>
     <button id="create">Create temporary session</button>
     <label>Session code or invitation link<input id="code" type="text" autocomplete="off"></label>
     <button id="join">Join session</button>
-    <label><input id="relay" type="checkbox"> Use relay only (connectivity test)</label>
+    <label id="relay-option" hidden><input id="relay" type="checkbox"> Use relay only (connectivity test)</label>
   </section>
   <section id="invitation" hidden>
     <h2>Invitation</h2><p>Code: <strong id="session-code"></strong></p>

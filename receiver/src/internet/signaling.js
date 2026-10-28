@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { isIP } from 'node:net';
 import { internetConfig } from './config.js';
 import { Rooms, turnCredentials } from './rooms.js';
 import { loadInternetAssets } from './assets.js';
@@ -43,6 +44,10 @@ export async function startSignaling({
   turn = {},
   now = Date.now,
 } = {}) {
+  if (stunUrls.some((url) => !/^stun:[^\s/?#]+$/.test(url)))
+    throw Error('STUN URLs must use stun:');
+  if (config.connectivityMode === 'stun-only' && turn.urls?.length)
+    throw Error('TURN URLs are forbidden in stun-only mode');
   const rooms = new Rooms(config, { now });
   const buckets = new Map();
   const relayGrants = new Map();
@@ -102,7 +107,13 @@ export async function startSignaling({
       )
         return;
       if (!url.pathname.startsWith('/v1/')) return reply(response, 404, { error: 'Not found' });
-      const ip = request.socket.remoteAddress;
+      const source = request.socket.remoteAddress;
+      const proxy = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(source);
+      const forwarded = request.headers['x-real-ip'];
+      // Only a deliberately trusted loopback proxy may supply this header.
+      if (config.trustedProxy && proxy && !isIP(forwarded ?? ''))
+        return reply(response, 400, { error: 'Trusted proxy must supply X-Real-IP' });
+      const ip = config.trustedProxy && proxy ? forwarded : source;
       for (const [key, value] of buckets) if (now() - value.start >= 60_000) buckets.delete(key);
       if (!buckets.has(ip)) {
         if (buckets.size >= 10_000) return reply(response, 503, { error: 'Service busy' });
@@ -129,6 +140,7 @@ export async function startSignaling({
         for (const [roomId, expires] of relayGrants)
           if (expires <= now()) relayGrants.delete(roomId);
         const relayAvailable = Boolean(
+          config.connectivityMode === 'turn-enabled' &&
           turn.urls?.length &&
           relayLimit > 0 &&
           (relayGrants.has(id) || relayGrants.size < relayLimit),
@@ -137,6 +149,7 @@ export async function startSignaling({
         // No static TURN password is shipped to the client. coturn enforces
         // allocation/concurrency/bandwidth quotas independently of signaling.
         return reply(response, 200, {
+          connectivityMode: config.connectivityMode,
           relayAvailable,
           iceServers: [
             ...(stunUrls.length ? [{ urls: stunUrls }] : []),
@@ -161,6 +174,8 @@ export async function startSignaling({
       if (!response.headersSent) reply(response, error.status ?? 400, { error: error.message });
     }
   });
+  server.maxConnections = 256;
+  server.maxRequestsPerSocket = 1000;
   server.requestTimeout = 15_000;
   server.headersTimeout = 10_000;
   await new Promise((resolve, reject) => server.once('error', reject).listen(port, host, resolve));

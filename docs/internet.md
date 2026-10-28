@@ -1,9 +1,10 @@
 # Internet transfers (development implementation)
 
 Internet mode adds bidirectional WebRTC DataChannels alongside the existing LAN
-HTTPS protocol. It requires an HTTPS signaling service and configured STUN/TURN
-for dependable cross-network connectivity. No public service is deployed or
-configured by this branch. Local browser tests do not establish production NAT,
+HTTPS protocol. It requires an HTTPS signaling service and configured STUN
+for direct cross-network connectivity. Restrictive NAT/firewalls can prevent a connection.
+The initial deployment uses STUN-only; TURN requires an explicit separate opt-in. An experimental signaling and STUN-only service is now deployed at
+`https://phonehaul.cecosl.ovh`; see the [live deployment record](internet-deployment.md). Local browser tests do not establish production NAT,
 firewall, VPS-capacity, Android-device, or native Windows/macOS compatibility.
 
 ## Using the client
@@ -19,7 +20,8 @@ Either peer can send copies after verification. Internet mode currently uses
 COPY only, including native destinations. Existing native LAN MOVE remains
 available through the original LAN flow. A browser download acknowledgment never
 authorizes deleting an original. No file data is uploaded to signaling or stored
-by a relay. TURN carries encrypted packets when direct connectivity is unavailable.
+by the signaling service. In STUN-only mode there is no relay fallback.
+Optional TURN support remains isolated behind `PHONEHAUL_CONNECTIVITY_MODE=turn-enabled`.
 
 The Internet service defaults to 1 GiB per file. Both clients enforce the
 negotiated minimum limit, on direct and relayed paths alike. The Android native
@@ -70,6 +72,9 @@ are development settings, not a capacity recommendation for the existing VPS.
 
 | Variable | Default / meaning |
 | --- | --- |
+| `PHONEHAUL_CONNECTIVITY_MODE` | `stun-only`; rejects TURN URLs, relay SDP and selected relay candidate pairs. `turn-enabled` explicitly enables the existing optional relay support |
+| `PHONEHAUL_TRUST_LOOPBACK_PROXY` | Unset; set `1` only with a trusted loopback proxy overwriting `X-Real-IP` |
+| `PHONEHAUL_MAX_SESSION_MS` | `86400000`; absolute signaling room lifetime, including established rooms |
 | `PHONEHAUL_SIGNAL_HOST` | `127.0.0.1`; keep behind a trusted HTTPS reverse proxy |
 | `PHONEHAUL_SIGNAL_PORT` | `8787` |
 | `PHONEHAUL_SIGNAL_URL` | No preset public service; optional native-client/export default |
@@ -85,7 +90,7 @@ are development settings, not a capacity recommendation for the existing VPS.
 | `PHONEHAUL_TURN_MAX_SESSIONS` | `0`: no relay admission until explicitly configured |
 | `PHONEHAUL_TURN_CREDENTIAL_SECONDS` | `3600`; credential lifetime, positive integer up to 86400 |
 
-Invitation expiry does not terminate an established session. Signaling polls
+Invitation expiry does not terminate an established session; the absolute room lifetime does. Signaling polls
 maintain a session lease; a missing peer is retained for the recovery interval
 plus a 30-second detection grace. Explicitly disconnected peers use the recovery
 interval directly. If signaling loses its room while an approved DataChannel is
@@ -94,9 +99,10 @@ still active, that connection continues; re-pairing is needed after it closes.
 The service keeps bounded SDP/message queues and bearer credentials in memory,
 with no database or file-upload route. Restarting it loses room recovery state.
 Polling is HTTPS JSON, not WebSocket; this avoids an additional server dependency.
-It never trusts `X-Forwarded-For`: behind a proxy, the socket-source rate budget
-is shared. Set an appropriate aggregate budget and per-client limits at the
-trusted reverse proxy before public use. Proxy logs must exclude authorization
+It never trusts `X-Forwarded-For`. With explicit loopback-proxy trust it uses the
+validated `X-Real-IP` header; otherwise the socket-source budget is shared.
+The proxy must overwrite that header, prevent direct access to the service port,
+and enforce per-client connection/HTTP limits including static assets. Proxy logs must exclude authorization
 headers and message bodies. Public HTML/asset requests also need proxy limits.
 
 TURN admission is separate from coturn's actual packet/allocation enforcement.
@@ -110,8 +116,8 @@ destinations in production. Configure relay ports, firewall rules, TLS, and
 destination restrictions; TURN/TLS is not an HTTP reverse-proxy route.
 
 For one file of size F through one relay, budget roughly F ingress plus F
-egress, excluding overhead. No VPS bandwidth allowance, pricing, public-IP/port
-availability, or production concurrency has been verified. Those facts must be
+egress, excluding overhead. The live IPv4/port assignments are now verified in the deployment record. VPS
+bandwidth allowance, pricing and production concurrency remain unverified. Those facts must be
 inventoried before production defaults or deployment. When relay admission is
 full, direct connectivity can still work; otherwise the client reports failure
 and preserves originals. There is no server-storage fallback.
@@ -212,3 +218,20 @@ not a unique-physical-memory measurement. Firefox process memory was not measure
 Local forced coturn and mixed-browser tests passed. These results do not prove
 all-device memory safety, production NAT traversal, TURN/TLS reachability, or
 transfer continuation after browser/Android process termination.
+
+## STUN-only deployment audit
+
+See the [readiness audit and device matrix](internet-readiness.md) and the
+[OVH deployment runbook](internet-deployment.md). The owner subsequently authorized VPS activation; its actual configuration and checks are recorded in the runbook.
+Signaling uses HTTPS JSON polling on `/v1/`, **not WebSocket**; there is no WSS
+path or Upgrade requirement in this implementation. ICE uses full gathering
+(up to 25 seconds) embedded in SDP, not trickle ICE, so separately arriving
+candidates and pre-description candidate queues do not exist. DataChannel setup
+is bounded to 60 seconds per attempt. Reconnection is explicit, retains the
+same room credentials and certificate, and restarts interrupted files at zero.
+The client displays selected local/remote candidate types and protocol from
+`getStats()` when reported, without candidate addresses, SDP, or tokens.
+IPv4/IPv6 candidates and UDP traversal depend on the installed browser/WebView
+and networks. Neither IPv6 Internet traversal nor Android hardware is qualified
+by local browser tests. The desktop sidecar currently requires a private IPv4
+interface at startup even when the Internet DataChannel could use IPv6.

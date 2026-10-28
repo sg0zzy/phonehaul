@@ -124,6 +124,7 @@ codes automatically.
 | Google Play / Android / beta                      | disabled                                                                                                                     | no transmission                                                                                      |
 | Microsoft Store / Windows x64 / stable            | manual; verified MSIX if configured                                                                                          | Partner Center receipt/acceptance; package identity/version + hash                                   |
 | Microsoft Store / Windows / beta                  | disabled                                                                                                                     | no transmission                                                                                      |
+| OVH PhoneHaul signaling + hosted client / Linux x64 Node 24 / experimental | Explicit owner approval on 2026-10-27 for `phonehaul.cecosl.ovh`; no standing automatic deployment | Immutable deployment ID, bundle and source SHA-256 manifest; checked remote bytes, TLS/API/STUN and rollback backup |
 | Website, Apple channels, other destinations / all | disabled                                                                                                                     | no transmission                                                                                      |
 
 Same-machine staging of local build outputs to the build workstation's

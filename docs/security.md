@@ -2,7 +2,7 @@
 
 The sections below describe LAN mode. Optional development Internet mode uses
 separate temporary rooms, independently compared DTLS fingerprint phrases, and
-WebRTC with STUN/TURN. Browser destinations cannot authorize source deletion.
+WebRTC with STUN-only by default; optional TURN requires an explicit policy opt-in. Browser destinations cannot authorize source deletion.
 See [Internet security and trust boundaries](internet.md#authentication-and-trust).
 
 The receiver binds **HTTPS only to one detected private IPv4 LAN address**. The
